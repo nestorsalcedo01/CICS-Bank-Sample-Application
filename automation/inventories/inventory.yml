@@ -1,0 +1,35 @@
+################################################################################
+# © Copyright IBM Corporation 2020, 2021
+################################################################################
+
+################################################################################
+# Description of the properties used in this configuration:
+# - Property `ansible_host` is the z/OS managed node (target),
+#    e.g, ansible_host: "zvm1.vmec.svl.ibm.com"
+# - Property `ansible_user` is the z/OS managed user to connect and run as over SSH,
+#    e.g, ansible_user: "zosadm"
+################################################################################
+
+all:
+  hosts:
+    winmvsb0:
+      ansible_host: winmvsb0.hursley.ibm.com
+      ansible_user: jenkins
+      ansible_connection: ssh 
+      host_key_checking: False
+    devtest1:
+      ansible_host: "nazare-rh-adcd1.fyre.ibm.com"        
+      ansible_port: "2022"
+      ansible_user: "ibmuser"
+    devtest2:
+      ansible_host: "10.250.64.5"
+      ansible_port: "22"
+      ansible_user: "ibmuser"
+    sandbox1:
+      ansible_host: "nazare-cbsa1.fyre.ibm.com"
+      ansible_port: "2022"
+      ansible_user: "ibmuser"
+    zva:
+      ansible_host: "172.17.128.17"
+      ansible_port: "22"
+      ansible_user: "ibmuser"

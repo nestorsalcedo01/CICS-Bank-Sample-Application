@@ -1,0 +1,418 @@
+###############################################################################
+# Licensed Materials - Property of IBM
+#
+# (c) Copyright IBM Corp. 2014,2020.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+###############################################################################
+
+---
+- hosts: "{{ host | default('sandbox1') }}" 
+  collections:
+    - ibm.ibm_zos_core
+  gather_facts: no
+  vars:
+    tgt_tmp_dir: "/tmp/ansible"
+    ctl_tmp_dir: "/tmp/ansible"
+  environment: "{{ environment_vars }}"
+
+  tasks:
+    # ##########################################################################
+    # - Create a PDS data set to place all JCLs created by Ansible scripts
+    # - Write a JCL to check the availability of DB2 subsystem before creating 
+    #   the DB2 objects.
+    # - If DB2 is not running, it will start DB2 using command:
+    #   -{{ DB2SSID }} START DB2  
+    # ########################################################################## 
+
+   - name: Setting facts
+     set_fact:
+       db2install_member: "INSTDB2"
+       cbsa_ansible_jcl_ds: "CBSA.ANSIBLE.JCL"
+       db2check: "DB2CHECK"
+       steplib_ds1: "{{ DB2_LOADLIB1 }}"
+
+   - name: Delete data set {{ cbsa_ansible_jcl_ds }}
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}"
+       state: absent
+     register: delete_ds
+
+   - name: Response for deleting data set {{ cbsa_ansible_jcl_ds }}
+     debug:
+       msg: "{{ delete_ds }}"
+
+   - name: Create data set {{ cbsa_ansible_jcl_ds }}
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}"
+       type: PDSE
+       space_primary: 5
+       space_secondary: 5
+       space_type: CYL
+       record_format: FB
+       record_length: 80
+       block_size: 800
+       directory_blocks: 5
+     register: create_ds  
+
+   - name: Response for creating data set {{ cbsa_ansible_jcl_ds }}
+     debug:
+       msg:
+         - "{{ create_ds }}"
+
+   - name: Create member {{ cbsa_ansible_jcl_ds }}({{ db2check }})
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}({{ db2check }})"
+       type: MEMBER
+     register: create_member
+
+   - name: Response for creating member {{ cbsa_ansible_jcl_ds }}({{ db2check }})
+     debug:
+       msg:
+         - "{{ create_member }}"
+
+   - name: Write a jcl to check the availability of DB2 
+     zos_blockinfile:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ db2check }})"
+       marker: "# {mark} ANSIBLE MANAGED BLOCK WRITE JCL"
+       block: |
+         //DB2CHECK  JOB CLASS=A,MSGCLASS=H,MSGLEVEL=(1,1),NOTIFY=&SYSUID
+         //DB2CHECK  EXEC PGM=IKJEFT1B,DYNAMNBR=20
+         //STEPLIB   DD  DISP=SHR,DSN={{ steplib_ds1 }}
+         //SYSTSPRT  DD  SYSOUT=*
+         //SYSPRINT  DD  SYSOUT=*
+         //SYSUDUMP  DD  SYSOUT=*
+         //SYSTSIN   DD  *
+           DSN SYSTEM({{ DB2SSID }})
+           RUN  PROGRAM({{ DB2PROG }}) PLAN({{ DB2PLAN }}) -
+                LIB('{{ DB2RUN }}.RUNLIB.LOAD')
+         //SYSIN    DD  *
+         SELECT * FROM SYSIBM.SYSDUMMY1;
+     register: write_jcl
+         
+   - name: Remove marker from jcl DB2CHECK
+     zos_lineinfile:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ db2check }})"
+       state: absent
+       regexp: '^#'
+     register: remove_marker
+
+   - name: Response for removing marker from jcl DB2CHECK
+     debug:
+       msg: "{{ remove_marker }}"       
+
+   - name: Submit jcl {{ cbsa_ansible_jcl_ds }}({{ db2check }}) to check the availability of DB2
+     zos_job_submit:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ db2check }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 30
+       return_output: true
+     register: submit_db2check
+
+   - name: Setting fact for job DB2CHECK
+     set_fact:
+       job_db2check: "{{submit_db2check}}"
+
+   - name: Setting facts for checking the job result DB2CHECK
+     set_fact:
+       JobName: "{{ job_db2check.jobs[0].job_name }}"
+       JobID: "{{ job_db2check.jobs[0].job_id }}"
+       JobCode: "{{ job_db2check.jobs[0].ret_code }}"
+
+   - name: Response for the execution of job DB2CHECK
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobCode}}"
+         - Max RC={{JobCode.code}}     
+
+   - name: Start DB2 if job {{ JobName }} fails with RC non-zero
+     zos_operator:
+       cmd: "-{{ DB2SSID }} START DB2"
+       verbose: true
+       wait_time_s: 30
+       wait: true
+     register: start_db2
+     when: (JobCode.code | int > 0)
+
+   - name: Response for starting DB2
+     debug:
+       msg: "{{ start_db2 }}"
+
+    # ##########################################################################
+    # Delete DB2 objects if they have already existed by running z/OS program
+    # IKJEFT1B
+    # Steps:
+    # - Generate temporary data sets for inputs (SYSTSIN, SYSIN) and 
+    #   outputs (SYSTSPRT, SYSPRINT, SYSUDUMP)
+    # - Allocate temporary data sets as sequential data sets
+    # - Drop the existing CBSA DB2 objects 
+    #   RC=00 if DB2 objects are found and deleted
+    #   RC=08 if DB2 objects not found     
+    # ##########################################################################   
+
+   - name: Create temp data set for output SYSTSPRT
+     command: "mvstmp {{ ansible_user | upper }}"
+     register: tmp_ds_output_systsprt
+
+   - name: Response for creating temp output SYSTSPRT
+     debug:
+       msg: "{{ tmp_ds_output_systsprt }}"
+
+   - name: Allocate {{ tmp_ds_output_systsprt }}
+     zos_data_set:
+       name: "{{ tmp_ds_output_systsprt.stdout }}"
+       type: seq 
+       state: present
+       record_format: FBA
+       record_length: 133
+     register: alloc_output_systsprt_result
+
+   - name: Response for allocating temp output 
+     debug:
+       msg: "{{ alloc_output_systsprt_result }}"
+
+   - name: Create temp data set for output SYSPRINT
+     command: "mvstmp {{ ansible_user | upper }}"
+     register: tmp_ds_output_sysprint
+
+   - name: Response for creating temp output SYSPRINT
+     debug:
+       msg: "{{ tmp_ds_output_sysprint }}"
+
+   - name: Allocate {{ tmp_ds_output_sysprint }}
+     zos_data_set:
+       name: "{{ tmp_ds_output_sysprint.stdout }}"
+       type: seq
+       state: present
+       record_format: FBA
+       record_length: 133
+     register: alloc_output_sysprint_result
+
+   - name: Response for allocating temp output
+     debug:
+       msg: "{{ alloc_output_sysprint_result }}"
+
+   - name: Create temp data set for output SYSUDUMP
+     command: "mvstmp {{ ansible_user | upper }}"
+     register: tmp_ds_output_sysudump
+
+   - name: Response for creating temp output SYSUDUMP
+     debug:
+       msg: "{{ tmp_ds_output_sysudump }}"
+
+   - name: Allocate {{ tmp_ds_output_sysudump }}
+     zos_data_set:
+       name: "{{ tmp_ds_output_sysudump.stdout }}"
+       type: seq
+       state: present
+       record_format: FBA
+       record_length: 133
+     register: alloc_output_sysudump_result
+
+   - name: Response for allocating temp output
+     debug:
+       msg: "{{ alloc_output_sysudump_result }}"       
+
+   - name: Setting facts
+     set_fact:
+       tmp_data_set_output_systsprt: "{{ tmp_ds_output_systsprt.stdout }}"
+       tmp_data_set_output_sysprint: "{{ tmp_ds_output_sysprint.stdout }}"
+       tmp_data_set_output_sysudump: "{{ tmp_ds_output_sysudump.stdout }}" 
+
+   - name: Setting facts
+     set_fact:
+       temp_systsprt: "{{ tmp_data_set_output_systsprt }}"
+       temp_sysprint: "{{ tmp_data_set_output_sysprint }}"
+       temp_sysudump: "{{ tmp_data_set_output_sysudump }}"
+
+   - name: Delete the DB2 objects using program IKJEFT1B
+     zos_mvs_raw:
+       program_name: ikjeft1b
+       auth: true 
+       dds:
+         - dd_input:
+             dd_name: systsin
+             content:
+               - DSN SYSTEM({{ DB2SSID }})
+               - RUN  PROGRAM({{ DB2PROG }}) PLAN({{ DB2PLAN }}) -
+               - LIB('{{ DB2RUN }}.RUNLIB.LOAD')     
+             return_content:
+               type: text
+         - dd_input:
+             dd_name: sysin
+             content: 
+               - SET CURRENT SQLID = '{{ SQLID }}';
+               - DROP DATABASE CBSA;
+               - DROP STOGROUP ACCOUNT;
+               - DROP STOGROUP PROCTRAN;
+               - DROP STOGROUP CONTROL; 
+             return_content:
+               type: text
+         - dd_data_set:
+             dd_name: systsprt
+             data_set_name: "{{ temp_systsprt }}"
+             disposition: old
+             return_content:
+               type: text
+         - dd_data_set:
+             dd_name: sysprint
+             data_set_name: "{{ temp_sysprint }}"
+             return_content:
+               type: text
+             disposition: old
+         - dd_data_set:
+             dd_name: sysudump
+             data_set_name: "{{ temp_sysudump }}"
+             disposition: old
+         - dd_data_set:
+             dd_name: steplib
+             data_set_name: "{{ steplib_ds1 }}"             
+     register: delete_db2_objects
+
+   - name: Response for deleteing DB2 objects
+     debug:
+       msg: "{{ delete_db2_objects }}"
+
+   - name: Setting fact for the result of z/OS program
+     set_fact:
+       program_execution: "{{delete_db2_objects}}"
+
+   - name: Setting fact for the execution of the z/OS program
+     set_fact:
+       ExecutionCode: "{{ program_execution.ret_code }}"
+
+    ###########################################################################
+    # Update JCL INSTDB2 to change DB2 system related config according to 
+    # the environment on which DB2 is running  
+    ###########################################################################
+   
+   - name: Setting facts
+     set_fact:
+       find_runlibload: "       LIB('D"      
+       update_runlibload: "       LIB('{{ DB2RUN }}.RUNLIB.LOAD')"
+       find_db2plan: "  RUN PROGRAM(DSNTEP2)  PLAN("
+       update_db2plan: "  RUN PROGRAM(DSNTEP2)  PLAN({{ DB2PLAN }}) -" 
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})" to remove JCLLIB
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})"
+       state: absent
+       regexp: '^//JCLLIB  JCLLIB ORDER='
+     register: remove_jcllib
+
+   - name: Response for removing JCLLIB
+     debug:
+       msg: "{{ remove_jcllib }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})" to change JOBLIB
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})"
+       state: present
+       regexp: '^//JOBLIB  DD  DISP=SHR,DSN='
+       line: '//JOBLIB  DD  DISP=SHR,DSN={{ DB2_LOADLIB1 }}'
+     register: update_joblib
+
+   - name: Response for updating JOBLIB
+     debug:
+       msg: "{{ update_joblib }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})" to change SSID
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})"
+       state: present
+       regexp: '^  DSN SYSTEM('
+       line: '  DSN SYSTEM({{ DB2SSID }})'
+     register: update_ssid
+
+   - name: Response for updating SSID
+     debug:
+       msg: "{{ update_ssid }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})" to change RUNLIB
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})"
+       state: present
+       regexp: '^{{ find_runlibload }}'
+       line: '{{ update_runlibload }}'
+     register: update_runlib
+
+   - name: Response for updating RUNLIB
+     debug:
+       msg: "{{ update_runlib }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})" to change BUFFER POOL
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})"
+       state: present
+       regexp: '^       INDEXBP'
+       line: '       INDEXBP BP1;'
+     register: update_bp2
+
+   - name: Response for updating BUFFER POOL
+     debug:
+       msg: "{{ update_bp2 }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})" to change DB2 PLAN
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})"
+       state: present
+       regexp: '^{{ find_db2plan }}'
+       line: '{{ update_db2plan }}'
+     register: update_db2plan
+
+   - name: Response for updating DB2 PLAN
+     debug:
+       msg: "{{ update_db2plan }}"
+      
+    # ##########################################################################
+    # Create DB2 objects by submitting jcl INSTDB2
+    # ##########################################################################
+   - name: Submit the jcl "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})" to create DB2 objects
+     zos_job_submit:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2install_member }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 30
+       return_output: true
+     register: db2_create
+     when: (ExecutionCode.code | int >= 0)
+
+   - name: Setting fact for job result
+     set_fact:
+       create_execution: "{{db2_create}}"
+
+   - name: Setting facts for checking the job result
+     set_fact:
+       JobName: "{{ create_execution.jobs[0].job_name }}"
+       JobID: "{{ create_execution.jobs[0].job_id }}"
+       JobCode: "{{ create_execution.jobs[0].ret_code }}"
+
+   - name: Response for the execution of job
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobCode}}"
+         - Max RC={{JobCode.code}}
+
+    # ##########################################################################
+    # Create DB2 objects by submitting jcl INSTDB2
+    # ##########################################################################
+   - name: Delete temporary data set {{ temp_systsprt }}
+     zos_data_set:
+       name: "{{ temp_systsprt }}"
+       state: absent
+
+   - name: Delete temporary data set {{ temp_sysprint }}
+     zos_data_set:
+       name: "{{ temp_sysprint }}"
+       state: absent
+
+   - name: Delete temporary data set {{ temp_sysudump }}
+     zos_data_set:
+       name: "{{ temp_sysudump }}"
+       state: absent

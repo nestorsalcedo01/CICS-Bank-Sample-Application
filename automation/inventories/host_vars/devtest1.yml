@@ -1,0 +1,101 @@
+---
+################################################################################
+# Copyright (c) IBM Corporation 2021
+################################################################################
+
+################################################################################
+# Description of the properties used in this configuration:
+# - Property `PYZ` is the python installation home path on the z/OS managed node (target),
+#    e.g, pyz: "/usr/lpp/IBM/cyp/v3r8/pyz"
+# - Property `ZOAU` is the ZOAU installation home on the z/OS managed node (target),
+#    e.g, zoau: "/usr/lpp/IBM/zoautil"
+# - property `ansible_python_interpreter` is the z/OS managed node (target) Python
+#    binary installation path, e.g, ansible_python_interpreter: "{{PYZ}}/bin/python3.8"
+#
+# Note, PYZ and ZOAU environment variables must be configured.
+################################################################################
+
+# IBM Open Enterprise SDK for Python 3.9
+PYZ: "/usr/lpp/IBM/cyp/v3r9/pyz"
+# IBM Open Enterprise SDK for Python 3.10
+#PYZ: "/usr/lpp/IBM/cyp/v3r10/pyz"
+
+ZOAU: "/usr/lpp/IBM/zoautil"
+
+################################################################################
+# Do not configure, variable substituion will correctly set the
+# variable`ansible_python_interpreter`
+################################################################################
+
+# IBM Open Enterprise SDK for Python 3.9
+ansible_python_interpreter: "{{ PYZ }}/bin/python3.9"
+# IBM Open Enterprise SDK for Python 3.10
+#ansible_python_interpreter: "{{ PYZ }}/bin/python3.10"
+
+# The location of ROCKET z Open Source TOOLS
+TOOLS_ROOT: "/rsusr/ported"
+TOOLS_PATH: "{{TOOLS_ROOT}}/bin"
+
+GIT_SHELL: "{{ TOOLS_PATH }}/bash"
+GIT_EXEC_PATH: "{{ TOOLS_PATH }}/git-core"
+GIT_TEMPLATE_DIR: "{{ TOOLS_ROOT }}/share/git-core/templates"
+
+JAVA_HOME: "/usr/lpp/java/J8.0_64"
+
+################### Enviroment variables for WaaS - DEVTEST ###################
+###################################### BEGIN ##################################
+baseDir: "/var/cbsa"
+
+CICS_HLQ: "CICSTS.V6R1M0.CICS"
+CICS_SSID_HLQ: "CICSTS61"
+CICS_SYSIN_LIB: "{{ CICS_SSID_HLQ }}.SYSIN"
+CICS_LOADLIB: "{{ CICS_HLQ }}.SDFHLOAD"
+CICS_CSD: "{{ CICS_SSID_HLQ }}.DFHCSD"
+CICS_STC: "CICSTS61"
+CICS_START_CMD: "S {{ CICS_STC }},START=COLD"
+
+DB2SSID: "DBD1"
+DB2_HLQ: "DB2.V13R1M0"
+DB2_LOADLIB1: "{{ DB2_HLQ }}.SDSNLOAD"
+DB2_LOADLIB2: "{{ DB2_HLQ }}.SDSNLOD2"
+DB2_EXITLIB: "{{ DB2_HLQ }}.SDSNEXIT"
+DB2RUN: "{{ DB2SSID }}"
+DB2PROG: "DSNTEP2"
+DB2PLAN: "DSNTEP13"
+ 
+COBOL_HLQ: "IGY.V6R4M0"
+####################################### END ###################################
+
+####################### Variables common to all hosts #########################
+###################################### BEGIN ##################################
+CBSA_ZFS_DSN: "CBSA.VAR.ZFS"
+localRepoCbsa: "{{ baseDir }}/CICS-Bank-Sample-Application"
+gitRepoCbsa: "git@github.ibm.com:IBMZSoftware/CICS-Bank-Sample-Application.git"
+branchCbsa: "main"
+
+CBSA_GROUP: "BANK"
+
+SQLID: "IBMUSER"
+
+DS_JCL_INSTALL: "CBSA.JCL.INSTALL"
+DS_CICSBSA_ASM: "CBSA.CICSBSA.ASM"
+DS_CICSBSA_BMS: "CBSA.CICSBSA.BMS"
+DS_CICSBSA_BUILDJCL: "CBSA.CICSBSA.BUILDJCL"
+DS_CICSBSA_CBSAMOD: "CBSA.CICSBSA.CBSAMOD"
+DS_CICSBSA_COBOL: "CBSA.CICSBSA.COBOL"
+DS_CICSBSA_COPYLIB: "CBSA.CICSBSA.COPYLIB"
+DS_CICSBSA_DBRM: "CBSA.CICSBSA.DBRM"
+DS_CICSBSA_DSECT: "CBSA.CICSBSA.DSECT"
+DS_CICSBSA_LKED: "CBSA.CICSBSA.LKED"
+DS_CICSBSA_LOADLIB: "CBSA.CICSBSA.LOADLIB"
+DS_CICSBSA_REORG: "CBSA.CICSBSA.REORG"
+DS_DB2_JCL_INSTALL: "CBSA.DB2.JCL.INSTALL"
+
+ZOSCONNECT_STC: "ZOSCSRV" 
+zcee_server_dir: "/var/zosconnect/v3r0/servers/defaultServer"
+zcee_resources_dir: "{{ zcee_server_dir }}/resources/zosconnect"
+zcee_user: "ibmuser"
+zcee_pw: "sys1"
+apis_dir: "apis"
+services_dir: "services"
+####################################### END ###################################

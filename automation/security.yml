@@ -1,0 +1,150 @@
+###############################################################################
+# Licensed Materials - Property of IBM
+#
+# (c) Copyright IBM Corp. 2014,2020.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+###############################################################################
+
+---
+- hosts: "{{ host | default('sandbox1') }}"
+  collections:
+    - ibm.ibm_zos_core
+  gather_facts: no
+  vars:
+    tgt_tmp_dir: "/tmp/ansible"
+    ctl_tmp_dir: "/tmp/ansible"
+  environment: "{{ environment_vars }}"
+
+  tasks:
+    # ##########################################################################
+    # Steps:
+    # 1- Check whether CBSA SAF resources are defined
+    # 2- Delete if already defined
+    # 3- Update JCL RACF001 to change system related config according to
+    #    the target environment
+    # 4- Define CBSA SAF resources
+    # ##########################################################################
+   - name: Setting facts
+     set_fact:
+       sec_member: "RACF001"
+       sec_class: "FACILITY"
+       sec_res1: "DFHDB2.AUTHTYPE.HBANK"
+       sec_res2: "DFHDB2.AUTHTYPE.{{ DB2SSID }}"
+
+    # ##########################################################################
+    # Step 1: Check whether CBSA SAF resources are defined
+    # ########################################################################## 
+   - name: Check CBSA SAF resources using TSO RLIST command
+     zos_tso_command:
+         commands:
+             - RLIST {{ sec_class }} {{ sec_res1 }}   
+             - RLIST {{ sec_class }} {{ sec_res2 }}
+     register: check_security
+     changed_when: true
+     failed_when: false 
+                 
+   - name: Setting fact for RLIST 
+     set_fact:
+       rlist_result: "{{check_security}}"
+
+   - name: Setting fact for RLIST Return Code
+     set_fact:
+       Cmd1_Return_Code: "{{ rlist_result.output[0].rc }}"
+
+   - name: Response for checking CBSA SAF resources
+     debug:
+       msg:
+         - RLIST Return Code={{ Cmd1_Return_Code }}
+
+    # ##########################################################################
+    # Step 2: Delete if already defined
+    # ##########################################################################
+   - name: Delete CBSA SAF resources if found using TSO RDELETE command
+     zos_tso_command:
+         commands:
+             - RDEL  {{ sec_class }}  {{ sec_res1 }}
+             - RDEL  {{ sec_class }}  {{ sec_res2 }}
+     register: delete_security
+     when: (Cmd1_Return_Code | int == 0)
+
+   - name: Setting fact for RDEL
+     set_fact:
+       rdel_result: "{{delete_security}}"
+     when: (delete_security is not skipped)  
+
+   - name: Setting fact for RDEL Return Code
+     set_fact:
+       Cmd2_Return_Code: "{{ rdel_result.output[0].rc }}"
+     when: (delete_security is not skipped)  
+
+   - name: Response for deleting CBSA SAF resources
+     debug:
+       msg:
+         - RDELETE Return Code={{ Cmd2_Return_Code }}
+     when: (delete_security is not skipped)
+
+    # ##########################################################################
+    # Step 3: Update JCL RACF001 
+    # ##########################################################################
+   - name: Setting facts
+     set_fact:
+       find_rdef_prof: "RDEFINE FACILITY DFHDB2.AUTHTYPE.D"
+       update_rdef_prof: "RDEFINE FACILITY DFHDB2.AUTHTYPE.{{ DB2SSID }} OWNER(IBMUSER) UACC(NONE)"
+       find_permit_prof: "PERMIT DFHDB2.AUTHTYPE.D"
+       update_permit_prof: "PERMIT DFHDB2.AUTHTYPE.{{ DB2SSID }}  CLASS(FACILITY) -"
+
+   - name: Update {{ DS_JCL_INSTALL }}({{ sec_member }}) to change profile definition
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ sec_member }})"
+       state: present
+       regexp: '^{{ find_rdef_prof }}'
+       line: '{{ update_rdef_prof }}'
+     register: update_rdef
+
+   - name: Response for updating RDEFINE profile
+     debug:
+       msg: "{{ update_rdef }}"
+
+   - name: Update {{ DS_JCL_INSTALL }}({{ sec_member }}) to change PERMIT command
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ sec_member }})"
+       state: present
+       regexp: '^{{ find_permit_prof }}'
+       line: '{{ update_permit_prof }}'
+     register: update_permit
+
+   - name: Response for updating PERMIT command
+     debug:
+       msg: "{{ update_permit }}"       
+
+    # ##########################################################################
+    # Step 4: Define CBSA SAF resources
+    # ##########################################################################
+   - name: Define CBSA SAF resources using jcl {{ DS_JCL_INSTALL }}({{ sec_member }})
+     zos_job_submit:
+       src: "{{ DS_JCL_INSTALL }}({{ sec_member }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 20
+       return_output: true
+     register: security_job
+
+   - name: Setting fact for sec job {{ sec_member }}
+     set_fact:
+       security_execution: "{{security_job}}"
+
+   - name: Setting facts for the job result {{ sec_member }}
+     set_fact:
+       JobName: "{{ security_execution.jobs[0].job_name }}"
+       JobID: "{{ security_execution.jobs[0].job_id }}"
+       JobSecCode: "{{ security_execution.jobs[0].ret_code }}"
+
+   - name: Response for the execution of security job {{ sec_member }}
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobSecCode}}"
+         - Max RC={{JobSecCode.code}}

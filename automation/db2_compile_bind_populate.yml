@@ -1,0 +1,299 @@
+###############################################################################
+# Licensed Materials - Property of IBM
+#
+# (c) Copyright IBM Corp. 2014,2020.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+###############################################################################
+
+---
+- hosts: "{{ host | default('sandbox1') }}"
+  collections:
+    - ibm.ibm_zos_core
+  gather_facts: no
+  vars:
+    tgt_tmp_dir: "/tmp/ansible"
+    ctl_tmp_dir: "/tmp/ansible"
+  environment: "{{ environment_vars }}"
+
+  tasks:
+    # ##########################################################################
+    # Steps:
+    # 1- Update member DEFAULT to change system related config according to the
+    #    environment in which CBSA will be installed 
+    # 2- Compile all of the source codes
+    # 3- BIND the programs to DB2
+    # 4- Populate DB2 tables with data
+    # ##########################################################################
+   
+   - name: Setting facts
+     set_fact:
+       update_default_config: "DEFAULT"      
+       update_runlibload: "       LIB('{{ DB2SSID }}.RUNLIB.LOAD')"
+       find_runlibload: "       LIB('DSNC10.DBCG.RUNLIB.LOAD') PARMS('/ALIGN(MID)')"
+
+   - name: Update "{{ DS_CICSBSA_BUILDJCL }}({{ update_default_config }})" to change CICS HLQ
+     zos_lineinfile:
+       src: "{{ DS_CICSBSA_BUILDJCL }}({{ update_default_config }})"
+       state: present
+       regexp: '^// SET CICSHLQ='
+       line: '// SET CICSHLQ={{ CICS_HLQ }}'
+     register: update_cicshlq
+
+   - name: Response for updating CICS HLQ
+     debug:
+       msg: "{{ update_cicshlq }}"
+
+   - name: Update "{{ DS_CICSBSA_BUILDJCL }}({{ update_default_config }})" to change COBOL HLQ
+     zos_lineinfile:
+       src: "{{ DS_CICSBSA_BUILDJCL }}({{ update_default_config }})"
+       state: present
+       regexp: '^// SET COBOLHLQ='
+       line: '// SET COBOLHLQ={{ COBOL_HLQ }}'
+     register: update_cobolhlq
+
+   - name: Response for updating COBOL HLQ
+     debug:
+       msg: "{{ update_cobolhlq }}"
+
+   - name: Update "{{ DS_CICSBSA_BUILDJCL }}({{ update_default_config }})" to change DB2 HLQ
+     zos_lineinfile:
+       src: "{{ DS_CICSBSA_BUILDJCL }}({{ update_default_config }})"
+       state: present
+       regexp: '^// SET DB2HLQ='
+       line: '// SET DB2HLQ={{ DB2_HLQ }}'
+     register: update_db2hlq
+
+   - name: Response for updating DB2 HLQ
+     debug:
+       msg: "{{ update_db2hlq }}"       
+
+    # ##########################################################################
+    # Step 2: Compile all of the source codes
+    # ##########################################################################      
+       
+   - name: Setting facts
+     set_fact:
+       db2compile_member: "COMPALL"
+       db2bind_member: "DB2BIND"
+       db2data_member: "BANKDATA"    
+
+   - name: Compile the source codes using jcl {{ DS_CICSBSA_BUILDJCL }}({{ db2compile_member }})
+     shell: "tsocmd \"SUBMIT '{{ DS_CICSBSA_BUILDJCL }}({{ db2compile_member }})'\""
+     register: compile_job
+
+   - debug:
+       msg: "Pause for 8 minutes to fully run job {{ DS_CICSBSA_BUILDJCL }}({{ db2compile_member }})"
+
+   - pause:
+       seconds: 480
+
+    # ##########################################################################
+    # Step 3: BIND the programs to DB2
+    # ##########################################################################
+
+   - name: Setting facts
+     set_fact:
+       find_ssid1: " DSN S("
+       find_ssid2: "DSN SYSTEM("
+       find_runlibload: "LIB('D"
+       update_runlibload: "LIB('{{ DB2RUN }}.RUNLIB.LOAD')"
+       find_sqlid: " SET CURRENT SQLID ="
+       update_sqlid: " SET CURRENT SQLID = '{{ SQLID }}';"
+       find_db2plan: "RUN PROGRAM(DSNTEP2) PLAN("
+       update_db2plan: "RUN PROGRAM(DSNTEP2) PLAN({{ DB2PLAN }}) -"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to change SSID-1
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: present
+       regexp: '^{{ find_ssid1 }}'
+       line: ' DSN S({{ DB2SSID }})'
+     register: update_ssid1
+
+   - name: Response for updating SSID-1
+     debug:
+       msg: "{{ update_ssid1 }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to change SSID-2
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: present
+       regexp: '^{{ find_ssid2 }}'
+       line: 'DSN SYSTEM({{ DB2SSID }})'
+     register: update_ssid2
+
+   - name: Response for updating SSID-2
+     debug:
+       msg: "{{ update_ssid2 }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to remove STEPLIB-1
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: absent
+       regexp: '^//STEPLIB  DD  DISP=SHR,DSN='
+     register: update_remove_steplib1
+
+   - name: Response for removing STEPLIB1
+     debug:
+       msg: "{{ update_remove_steplib1 }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to remove STEPLIB-2
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: absent
+       regexp: '^//         DD  DISP=SHR,DSN=D'
+     register: update_remove_steplib2
+
+   - name: Response for removing STEPLIB2
+     debug:
+       msg: "{{ update_remove_steplib2 }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to add STEPLIB-1
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: present
+       regexp: '^//STEPLIB  DD  DISP=SHR,DSN={{ DB2_LOADLIB1 }}'
+       insertafter: '^//BIND    EXEC PGM=IKJEFT01'
+       line: '//STEPLIB  DD  DISP=SHR,DSN={{ DB2_LOADLIB1 }}'
+     register: update_add_steplib1
+
+   - name: Response for adding STEPLIB1
+     debug:
+       msg: "{{ update_add_steplib1 }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to add STEPLIB-2
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: present
+       insertafter: '^//GRANT EXEC PGM=IKJEFT01,REGION=0M'
+       line: '//STEPLIB  DD  DISP=SHR,DSN={{ DB2_LOADLIB1 }}'
+     register: update_add_steplib2
+
+   - name: Response for adding STEPLIB2
+     debug:
+       msg: "{{ update_add_steplib2 }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to change RUNLIB
+     zos_lineinfile:       
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: present
+       regexp: '^{{ find_runlibload }}'
+       line: '{{ update_runlibload }}'
+     register: update_runlib
+
+   - name: Response for updating RUNLIB
+     debug:
+       msg: "{{ update_runlib }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to change SQLID
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: present
+       regexp: '^{{ find_sqlid }}'
+       line: '{{ update_sqlid }}'
+     register: update_sqlid
+
+   - name: Response for updating SQLID
+     debug:
+       msg: "{{ update_sqlid }}"
+
+   - name: Update "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})" to change DB2 PLAN
+     zos_lineinfile:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       state: present
+       regexp: '^{{ find_db2plan }}'
+       line: '{{ update_db2plan }}'
+     register: update_db2plan
+
+   - name: Response for updating DB2 PLAN
+     debug:
+       msg: "{{ update_db2plan }}"
+
+   - name: Bind the programs to DB2 using jcl {{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})
+     zos_job_submit:
+       src: "{{ DS_DB2_JCL_INSTALL }}({{ db2bind_member }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 30
+       return_output: true
+     register: bind_job
+
+   - name: Setting fact for bind job {{ db2bind_member }}
+     set_fact:
+       bind_execution: "{{bind_job}}"
+
+   - name: Setting facts for the job result {{ db2bind_member }}
+     set_fact:
+       JobName: "{{ bind_execution.jobs[0].job_name }}"
+       JobID: "{{ bind_execution.jobs[0].job_id }}"
+       JobBindCode: "{{ bind_execution.jobs[0].ret_code }}"
+
+   - name: Response for the execution of bind job {{ db2bind_member }}
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobBindCode}}"
+         - Max RC={{JobBindCode.code}}
+
+    # ##########################################################################
+    # Step 4: Populate DB2 tables with data
+    # ##########################################################################
+
+   - name: Setting fact
+     set_fact:
+       find_ssid: " DSN SYSTEM(DBCG)"
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ db2data_member }})" to change SSID
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ db2data_member }})"
+       state: present
+       regexp: '^{{ find_ssid }}'
+       line: 'DSN SYSTEM({{ DB2SSID }})'
+     register: update_ssid
+
+   - name: Response for updating SSID
+     debug:
+       msg: "{{ update_ssid }}"
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ db2data_member }})" to change STEPLIB
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ db2data_member }})"
+       state: present
+       regexp: '^//         DD DISP=SHR,DSN=D'
+       line: '//         DD DISP=SHR,DSN={{ DB2_LOADLIB1 }}'
+     register: update_steplib
+
+   - name: Response for updating STEPLIB
+     debug:
+       msg: "{{ update_steplib }}"
+
+   - name: Populate DB2 tables using jcl {{ DS_JCL_INSTALL }}({{ db2data_member }})
+     zos_job_submit:
+       src: "{{ DS_JCL_INSTALL }}({{ db2data_member }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 30
+       return_output: true
+     register: populate_job
+     when: (JobBindCode.code | int <= 4)
+
+   - name: Setting fact for populate job {{ db2data_member }}
+     set_fact:
+       populate_execution: "{{populate_job}}"
+
+   - name: Setting facts for the job result {{ db2data_member }}
+     set_fact:
+       JobName: "{{ populate_execution.jobs[0].job_name }}"
+       JobID: "{{ populate_execution.jobs[0].job_id }}"
+       JobPopulateCode: "{{ populate_execution.jobs[0].ret_code }}"
+
+   - name: Response for the execution of populate job {{ db2data_member }}
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobPopulateCode}}"
+         - Max RC={{JobPopulateCode.code}}

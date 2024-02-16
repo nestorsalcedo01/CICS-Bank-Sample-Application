@@ -1,0 +1,305 @@
+###############################################################################
+# © Copyright IBM Corporation 2022
+###############################################################################
+
+---
+- hosts: "{{ host | default('sandbox1') }}"
+  collections:
+    - ibm.ibm_zos_core
+  gather_facts: no
+  vars:
+    tgt_tmp_dir: "/tmp/ansible"
+    ctl_tmp_dir: "/tmp/ansible"
+  environment: "{{ environment_vars }}"
+
+  tasks:
+    # ##########################################################################
+    # Steps:
+    # 1- Create a backup copy from server.xml file.
+    # 2- Copy all CBSA APIs and Services files to z/OS Connect directories.
+    # 3- Check whether an IPIC connection (zosconnect_cicsIpicConnection)
+    #    to the CICS systems is already defined in server.xml.
+    #    - If so, do not copy CBSA server.xml file.
+    #    - If not, copy and update CBSA server.xml file. Please note that CBSA
+    #      uses port 1026 for the communication between CICS/TS and z/OS Connect.
+    #      It is defined via TCPIPSERVICE definition in CBSA.JCL.INSTALL(BANK).
+    #      Check cics_main.yml to find out under which conditions it will be
+    #      defined.
+    # 4- Restart z/OS Connect server.
+    # ##########################################################################
+
+   - name: Setting facts to copy z/OS Connect resources
+     set_fact:
+       aar_files: "aarfiles"
+       sar_files: "sarfiles"
+       server_dir: "zoseeserver"
+       server_file: "server.xml"
+       server_file_backup: "server-backup.xml"
+
+   - name: Create a copy from {{ zcee_server_dir }}/{{ server_file }} 
+     zos_copy:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       dest: "{{ zcee_server_dir }}/{{ server_file_backup }}"
+       force: true
+       remote_src: true
+     register: create_copy_file
+
+   - name: Response for creating a backup copy from {{ zcee_server_dir }}/{{ server_file }}
+     debug:
+       msg: "{{ create_copy_file }}"
+
+    # ###################################################################
+    # Copy all CBSA APIs and Services files to z/OS Connect directories.
+    # ###################################################################
+
+   - name: Copy z/OS Connect resources (.aar files) into {{ zcee_resources_dir }}
+     zos_copy:
+       src: "{{ localRepoCbsa }}/{{ aar_files }}/{{ item }}"
+       dest: "{{ zcee_resources_dir }}/{{ apis_dir }}/{{ item }}"
+       remote_src: true
+       force: true
+     with_items:
+       - 'creacc.aar'
+       - 'crecust.aar'
+       - 'delacc.aar'
+       - 'delcus.aar'
+       - 'inqacccz.aar'
+       - 'inqaccz.aar'
+       - 'inqcustz.aar'
+       - 'makepayment.aar'
+       - 'updacc.aar'
+       - 'updcust.aar'
+     register: copy_zcee_aar
+
+   - name: Response for copying aar files into {{ zcee_resources_dir }}
+     debug:
+       msg: "{{ copy_zcee_aar }}"
+
+   - name: Copy z/OS Connect resources (.sar files) into {{ zcee_resources_dir }}
+     zos_copy:
+       src: "{{ localRepoCbsa }}/{{ sar_files }}/{{ item }}"
+       dest: "{{ zcee_resources_dir }}/{{ services_dir }}/{{ item }}"
+       remote_src: true
+       force: true
+     with_items:
+       - 'CSacccre.sar'
+       - 'CSaccdel.sar'
+       - 'CSaccenq.sar'
+       - 'CSaccupd.sar'
+       - 'CScustacc.sar'
+       - 'CScustcre.sar'
+       - 'CScustdel.sar'
+       - 'CScustenq.sar'
+       - 'CScustupd.sar'
+       - 'Pay.sar'
+     register: copy_zcee_sar
+
+   - name: Response for copying sar files into {{ zcee_resources_dir }}
+     debug:
+       msg: "{{ copy_zcee_sar }}"
+
+   - name: Set the access permission for {{ zcee_resources_dir }}
+     shell:
+       cmd: chmod -R g+rwx {{ zcee_resources_dir }}
+     register: set_access
+
+   - name: Response for the access permission
+     debug:
+       msg: "{{ set_access }}"
+
+    # ###################################################################
+    # Check whether an IPIC connection (zosconnect_cicsIpicConnection) to 
+    # the CICS system is already defined in server.xml.
+    # ###################################################################
+
+   - name: Search for "zosconnect_cicsIpicConnection" in {{ zcee_server_dir }}/{{ server_file }}
+     shell: "grep -i 'zosconnect_cicsIpicConnection' {{ zcee_server_dir }}/{{ server_file }}"
+     changed_when: true
+     failed_when: false
+     register: find_string1
+
+   - name: Response for searching "zosconnect_cicsIpicConnection" in {{ zcee_server_dir }}/{{ server_file }}
+     debug:
+       msg: "{{ find_string1 }}"
+
+   - name: Setting fatcs for "zosconnect_cicsIpicConnection"
+     set_fact:
+       zosconnect_cics_value: "{{ find_string1.stdout }}"
+       zosconnect_cics_changed: "{{ find_string1.changed }}"
+       zosconnect_cics_rc: "{{ find_string1.rc }}"
+
+   - name: Response for searching "zosconnect_cicsIpicConnection" in {{ zcee_server_dir }}/{{ server_file }}
+     debug:
+       msg: "{{ zosconnect_cics_rc }}"
+ 
+    # ###################################################################
+    # If a connection to the CICS system is already defined in server.xml,
+    # do not copy CBSA server.xml. Add a new line for 
+    # 
+    # ###################################################################
+
+   - name: Setting facts
+     set_fact:
+       find_cicsipic: ' <zosconnect_cicsIpicConnection id="'
+       add_cbsa_cicsipic: ' <zosconnect_cicsIpicConnection id="cicsConn" host="localhost" port="1025" />'
+       find_end_server: '</server>'
+       add_cicsipic_group: ' <zosconnect_cicsConnectionGroup id="cicsConnGrp" cicsConnectionRefs="CICS1, cicsConn"/>'
+
+   - name: Update "{{ zcee_server_dir }}/{{ server_file }}" to add a new cicsipic element for CBSA
+     zos_lineinfile:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       state: present
+       regexp: '^{{ add_cbsa_cicsipic }}'
+       insertbefore: '^{{ find_end_server }}'
+       line: '{{ add_cbsa_cicsipic }}'
+     when: (find_string1.rc == 0)
+     register: add_cbsa_cicsipic
+
+   - name: Response for adding a new cicsipic element for CBSA
+     debug:
+       msg: "{{ add_cbsa_cicsipic }}"
+     when: (add_cbsa_cicsipic is not skipped)
+
+   - name: Update "{{ zcee_server_dir }}/{{ server_file }}" to add a group of CICS connection element
+     zos_lineinfile:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       state: present
+       regexp: '^{{ add_cicsipic_group }}'
+       insertbefore: '^{{ find_end_server }}'
+       line: '{{ add_cicsipic_group }}'
+     when: (find_string1.rc == 0)
+     register: add_cicsipic_grp
+
+   - name: Response for adding a new cicsipic element for CBSA
+     debug:
+       msg: "{{ add_cicsipic_grp }}"
+     when: (add_cicsipic_grp is not skipped)
+
+    # ###################################################################
+    # If there is no connection defined to the CICS system,
+    # copy CBSA server.xml and update accordingly.
+    # ###################################################################
+
+   - name: Setting facts
+     set_fact:
+       find_user: '      <user name="ibmuser"/>'
+       update_user: '      <user name="{{ zcee_user }}"/>'
+       find_pass: '     <user name="ibmuser" password='
+       update_pass: '     <user name="{{ zcee_user }}" password="{{ zcee_pw }}" />'
+       find_cbsa_cicsipic: '    <zosconnect_cicsIpicConnection id='
+       update_cbsa_cicsipic: '    <zosconnect_cicsIpicConnection id="cicsConn" host="localhost" port="1026" />'
+       find_cbsa_httpport: '                  httpPort='
+       update_cbsa_httpport: '                  httpPort="9080"'
+       find_cbsa_httpsport: '                  httpsPort='
+       update_cbsa_httpsport: '                  httpsPort="9443" />'
+
+   - name: Copy z/OS Connect {{ server_file }}
+     zos_copy:
+       src: "{{ localRepoCbsa }}/{{ server_dir }}/{{ server_file }}"
+       dest: "{{ zcee_server_dir }}"
+       remote_src: true
+     when: (find_string1.rc != 0)
+     register: copy_zcee
+
+   - name: Response for copying {{ server_file }}
+     debug:
+       msg: "{{ copy_zcee }}"
+     when: (copy_zcee is not skipped)
+
+   - name: Update "{{ zcee_server_dir }}/{{ server_file }}" to change password
+     zos_lineinfile:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       state: present
+       regexp: '^{{ find_pass }}'
+       line: '{{ update_pass }}'
+     when: (copy_zcee is not skipped)
+     register: update_pw
+
+   - name: Response for updating password
+     debug:
+       msg: "{{ update_pw }}"
+     when: (update_pw is not skipped)     
+
+   - name: Update "{{ zcee_server_dir }}/{{ server_file }}" to change user
+     zos_lineinfile:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       state: present
+       regexp: '^{{ find_user }}'
+       line: '{{ update_user }}'
+     when: (copy_zcee is not skipped)
+     register: update_userid
+
+   - name: Response for updating user
+     debug:
+       msg: "{{ update_userid }}"
+     when: (update_userid is not skipped)
+
+   - name: Update "{{ zcee_server_dir }}/{{ server_file }}" to change http port
+     zos_lineinfile:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       state: present
+       regexp: '^{{ find_cbsa_httpport }}'
+       line: '{{ update_cbsa_httpport }}'
+     when: (copy_zcee is not skipped)
+     register: update_httpport
+
+   - name: Response for updating http port
+     debug:
+       msg: "{{ update_httpport }}"
+     when: (update_httpport is not skipped)
+
+   - name: Update "{{ zcee_server_dir }}/{{ server_file }}" to change https port
+     zos_lineinfile:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       state: present
+       regexp: '^{{ find_cbsa_httpsport }}'
+       line: '{{ update_cbsa_httpsport }}'
+     when: (copy_zcee is not skipped)
+     register: update_httpsport
+
+   - name: Response for updating https port
+     debug:
+       msg: "{{ update_httpsport }}"
+     when: (update_httpsport is not skipped)
+
+   - name: Update "{{ zcee_server_dir }}/{{ server_file }}" to change port
+     zos_lineinfile:
+       src: "{{ zcee_server_dir }}/{{ server_file }}"
+       state: present
+       regexp: '^{{ find_cbsa_cicsipic }}'
+       line: '{{ update_cbsa_cicsipic }}'
+     when: (copy_zcee is not skipped)
+     register: update_cicsipic
+
+   - name: Response for updating port
+     debug:
+       msg: "{{ update_cicsipic }}"
+     when: (update_cicsipic is not skipped)
+
+    # ###################################################################
+    # Restart z/OS Connect server
+    # ###################################################################
+
+   - name: Stop {{ ZOSCONNECT_STC }}
+     zos_operator:
+       cmd: 'P {{ ZOSCONNECT_STC }}'
+       verbose: true
+       wait: true
+       wait_time_s: 20
+     register: stop_zcee
+
+   - name: Response for stopping {{ ZOSCONNECT_STC }}
+     debug:
+       msg: "{{ stop_zcee }}"
+
+   - name: Start {{ ZOSCONNECT_STC }}
+     zos_operator:
+       cmd: 'S {{ ZOSCONNECT_STC }}'
+       verbose: true
+       wait: true
+       wait_time_s: 20
+     register: start_zcee
+
+   - name: Response for starting {{ ZOSCONNECT_STC }}
+     debug:
+       msg: "{{ start_zcee }}"

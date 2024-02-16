@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- <copyright                                   --> 
+<!-- notice="copyright-cip-java"                    -->
+<!-- pids=""                                        -->
+<!-- years="2016"                                   -->
+<!-- crc="" >                                       -->
+<!--  (C) Copyright IBM Corp. 2016                  -->
+<!--  FOR IBM INTERNAL TEST PURPOSES ONLY           -->
+<!-- </copyright>                                   -->
+<web-app xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://java.sun.com/xml/ns/javaee" xmlns:web="http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd" xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd" version="3.0">
+  <context-param>
+    <param-name>disable-xsrf-protection</param-name>
+    <param-value>true</param-value>
+  </context-param>
+  <context-param>
+    <param-name>syncId</param-name>
+    <param-value>false</param-value>
+</context-param>
+  <display-name>com.ibm.cics.cip.bank.LibertyAPI.webUI-AFTER</display-name>
+</web-app>

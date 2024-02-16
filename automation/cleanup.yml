@@ -1,0 +1,181 @@
+###############################################################################
+# Licensed Materials - Property of IBM
+#
+# (c) Copyright IBM Corp. 2014,2020.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+###############################################################################
+
+---
+- hosts: "{{ host | default('sandbox1') }}"
+  collections:
+    - ibm.ibm_zos_core
+  gather_facts: no
+  vars:
+    tgt_tmp_dir: "/tmp/ansible"
+    ctl_tmp_dir: "/tmp/ansible"
+  environment: "{{ environment_vars }}"
+
+  tasks:
+
+   - name: Setting facts for CBSA File System and Mount Point
+     set_fact:
+       unmount_command: "UNMOUNT FILESYSTEM('{{ CBSA_ZFS_DSN }}')"
+       mount_command: "MOUNT FILESYSTEM('{{ CBSA_ZFS_DSN }}') MOUNTPOINT('{{ baseDir }}') TYPE(ZFS) MODE(RDWR)"
+       delete_command: "DEL '{{ CBSA_ZFS_DSN }}'"
+
+   - name: Unmount CBSA File System {{ CBSA_ZFS_DSN }}
+     zos_tso_command:
+         commands:
+              - "{{ unmount_command }}"
+     register: unmount_zfs
+     changed_when: true
+     failed_when: false
+
+   - name: Setting fact for UNMOUNT
+     set_fact:
+       unmount_result: "{{unmount_zfs}}"
+     when: (unmount_zfs is not skipped)
+
+   - name: Setting fact for UNMOUNT Return Code
+     set_fact:
+       Cmd1_Return_Code: "{{ unmount_result.output[0].rc }}"
+     when: (unmount_zfs is not skipped)
+
+   - name: Response for UNMOUNT command
+     debug:
+       msg:
+         - UNMOUNT Return Code={{ Cmd1_Return_Code }}
+     when: (unmount_zfs is not skipped)
+
+   - name: Delete CBSA File System {{ CBSA_ZFS_DSN }}
+     zos_tso_command:
+         commands:
+              - "{{ delete_command }}"
+     register: delete_zfs
+     when: (Cmd1_Return_Code | int == 0)
+
+   - name: Response for deleting CBSA installation (VSAM) data sets
+     debug:
+       msg: "{{ delete_zfs }}"
+
+   - name: Delete {{ baseDir }}
+     file:
+       path: "{{ baseDir }}"
+       state: absent
+     register: delete_baseDir
+
+   - name: Response for deleting {{ baseDir }}
+     debug:
+       msg: "{{ delete_baseDir }}"
+
+   - name: Create {{ baseDir }}
+     file:
+       path: "{{ baseDir }}"
+       state: directory
+       mode: 0755
+     register: create_baseDir
+
+   - name: Response for creating {{ baseDir }}
+     debug:
+       msg: "{{ create_baseDir }}"
+
+   - name: Allocate File System {{ CBSA_ZFS_DSN }}
+     zos_data_set:
+       name: "{{ CBSA_ZFS_DSN }}"
+       type: zfs
+       space_primary: 300
+       space_secondary: 100
+       space_type: CYL
+       state: present
+     register: alloc_zfs
+
+   - name: Response for allocating {{ CBSA_ZFS_DSN }}
+     debug:
+       msg: "{{ alloc_zfs }}"
+
+   - name: Mount CBSA File System {{ CBSA_ZFS_DSN }}
+     zos_tso_command:
+         commands:
+              - "{{ mount_command }}"
+     register: mount_zfs
+
+   - name: Setting fact for MOUNT
+     set_fact:
+       mount_result: "{{mount_zfs}}"
+
+   - name: Setting fact for MOUNT Return Code
+     set_fact:
+       Cmd2_Return_Code: "{{ mount_result.output[0].rc }}"
+
+   - name: Response for MOUNT command
+     debug:
+       msg:
+         - MOUNT Return Code={{ Cmd2_Return_Code }}          
+
+   - name: Clone {{ localRepoCbsa }}
+     shell: |      
+       {{ TOOLS_PATH }}/git clone --branch {{ branchCbsa }} {{ gitRepoCbsa }} {{ localRepoCbsa }}
+       cd {{ localRepoCbsa }}
+       {{ TOOLS_PATH }}/git checkout {{ branchCbsa }}
+     register: clone_localRepoCbsa
+
+   - name: Response for cloning {{ localRepoCbsa }}
+     debug:
+       msg: "{{ clone_localRepoCbsa }}"
+
+   - name: Stop {{ CICS_STC }} started task
+     zos_operator:
+       cmd: 'F "{{ CICS_STC }}",CEMT P SHUT'
+       verbose: true
+       wait: true
+       wait_time_s: 45
+     register: stop_cics
+
+   - name: Response for CICS normal shutdown
+     debug:
+       msg: "{{ stop_cics }}"   
+
+   - name: Check if CBSA installation (VSAM) data sets exist
+     zos_find:
+       patterns: 'CBSA.CICSBSA.**'
+       resource_type: cluster
+     register: check_vsam
+
+   - name: Response for the existence of CBSA installation (VSAM) data sets
+     debug:
+       msg: "{{ check_vsam }}"
+
+   - name: Delete CBSA installation (VSAM) data sets if exists
+     zos_data_set:
+       name: "{{ item.name }}"
+       state: absent
+     with_items: "{{ check_vsam['data_sets'] }}"
+     register: delete_vsam
+     when: check_vsam.matched >= 1
+
+   - name: Response for deleting CBSA installation (VSAM) data sets
+     debug:
+       msg: "{{ delete_vsam }}"
+
+   - name: Check if CBSA installation (non-VSAM) data sets exist
+     zos_find:
+       patterns: 'CBSA.**'
+     register: check_non_vsam
+
+   - name: Response for the existence of CBSA installation (non-VSAM) data sets
+     debug:
+       msg: "{{ check_non_vsam }}"
+
+   - name: Delete CBSA installation (Non-VSAM) data sets if exists
+     zos_data_set:
+       name: "{{ item.name }}"
+       state: absent
+     with_items: "{{ check_non_vsam['data_sets'] }}"
+     register: delete_non_vsam
+     when: check_non_vsam.matched >= 1
+
+   - name: Response for deleting CBSA installation (Non-VSAM) data sets
+     debug:
+       msg: "{{ delete_non_vsam }}"

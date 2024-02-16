@@ -1,0 +1,931 @@
+###############################################################################
+# Licensed Materials - Property of IBM
+#
+# (c) Copyright IBM Corp. 2014,2020.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+###############################################################################
+
+---
+- hosts: "{{ host | default('sandbox1') }}"
+  collections:
+    - ibm.ibm_zos_core
+  gather_facts: no
+  vars:
+    tgt_tmp_dir: "/tmp/ansible"
+    ctl_tmp_dir: "/tmp/ansible"
+
+  environment: "{{ environment_vars }}"
+
+  tasks:
+    # ##########################################################################
+    #
+    # Find CICS JCL Procedure Library. It needs to have CICS running, so some
+    # conditions will check the availability of CICS.
+    #
+    # ##########################################################################
+
+   - name: Stop {{ CICS_STC }} started task
+     zos_operator:
+       cmd: 'F "{{ CICS_STC }}",CEMT P SHUT'
+       verbose: true
+       wait: true
+       wait_time_s: 40
+     register: stop_cics
+
+   - name: Response for CICS normal shutdown
+     debug:
+       msg: "{{ stop_cics }}"
+
+   - name: Job query {{ CICS_STC }}
+     zos_job_query: 
+       job_name: "{{ CICS_STC }}"
+     register: job_query_cics
+
+   - name: Response for Job query {{ CICS_STC }}
+     debug:
+       msg: "{{ job_query_cics }}"
+
+   - name: Setting fact for job query
+     set_fact:
+       query_exec: "{{job_query_cics}}"
+
+   - name: Setting facts for the query result 
+     set_fact:
+       JobName: "{{ query_exec.jobs[0].job_name }}"
+       JobID: "{{ query_exec.jobs[0].job_id }}"
+       RC: "{{ query_exec.jobs[0].ret_code }}"
+       Owner: " {{ query_exec.jobs[0].owner }}"
+
+   - name: Print Job query information
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}  
+         - Return Code={{RC}}
+         - Job Owner={{Owner}}
+     when: (query_exec.jobs[0].ret_code == none)
+  
+   - name: Start {{ CICS_STC }}
+     zos_operator:
+       cmd: '{{ CICS_START_CMD }}'
+       verbose: true
+       wait: true
+       wait_time_s: 30
+     register: start_cics
+     when: (query_exec.jobs[0].ret_code.code ==1) or (query_exec.jobs[0].ret_code.msg == 'JOB NOT FOUND') or ('ABEND' in query_exec.jobs[0].ret_code.msg)
+     changed_when: true
+     failed_when: false
+
+   - name: Response for starting CICS
+     debug:
+       msg: "{{ start_cics }}"
+     when: (start_cics is not skipped)
+
+   - name: Setting facts to find CICS JCL Procedure Library
+     set_fact:
+       cbsa_ansible_jcl_ds: "CBSA.ANSIBLE.JCL"
+       cics_findproc_jcl: "FINDPROC"
+       cics_findproc_output: "CBSA.ANSIBLE.FINDPROC.OUTPUT"
+       cics_findproc_rexx: "CICSLOG"
+
+   - name: Delete data set {{ cics_findproc_output }}
+     zos_data_set:
+       name: "{{ cics_findproc_output }}"
+       state: absent
+     register: delete_ds
+
+   - name: Response for deleting data set {{ cics_findproc_output }}
+     debug:
+       msg: "{{ delete_ds }}"
+
+   - name: Delete member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})"
+       state: absent
+       type: MEMBER
+     register: delete_member
+
+   - name: Response for deleting member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})
+     debug:
+       msg: "{{ delete_member }}"
+
+   - name: Delete member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }}) 
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }})"
+       state: absent
+       type: MEMBER
+     register: delete_member
+
+   - name: Response for deleting member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }})
+     debug:
+       msg: "{{ delete_member }}"
+
+   - name: Delete {{ baseDir }}/files
+     file:
+       path: "{{ baseDir }}/files"
+       state: absent
+     register: delete_file
+
+   - name: Response for deleting {{ baseDir }}/files
+     debug:
+       msg: "{{ delete_file }}"
+
+   - name: Create member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})"
+       type: MEMBER
+     register: create_member
+
+   - name: Response for creating member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})
+     debug:
+       msg:
+         - "{{ create_member }}"
+
+   - name: Setting fact for REXX parm
+     set_fact:
+       rexx_parm: "PARM='{{ cics_findproc_rexx }}'"
+            
+   - name: Write a jcl to find CICS procedure library
+     zos_blockinfile:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})"
+       marker: "# {mark} ANSIBLE MANAGED BLOCK WRITE JCL"
+       block: |
+         //FINDPROC JOB CLASS=A,MSGCLASS=H,MSGLEVEL=(1,1),NOTIFY=&SYSUID
+         //REXX     EXEC PGM=IRXJCL,{{ rexx_parm }},REGION=0M
+         //SYSEXEC  DD DISP=SHR,DSN={{ cbsa_ansible_jcl_ds }}
+         //SYSIN    DD  DUMMY
+         //SYSTSPRT DD  DISP=(NEW,CATLG),DSN={{ cics_findproc_output }},
+         //  DCB=(RECFM=VBA,LRECL=240,BLKSIZE=27998),UNIT=3390,
+         //  SPACE=(TRK,(15,15),RLSE)
+         //SYSPRINT DD  SYSOUT=*
+         //OUTDD    DD  DUMMY
+     register: write_jcl
+
+   - name: Remove marker from jcl FINDPROC
+     zos_lineinfile:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})"
+       state: absent
+       regexp: '^#'
+     register: remove_marker
+
+   - name: Response for removing marker from jcl FINDPROC
+     debug:
+       msg: "{{ remove_marker }}"
+
+   - name: Create member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }})
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }})"
+       type: MEMBER
+     register: create_member
+
+   - name: Response for creating member {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }})
+     debug:
+       msg:
+         - "{{ create_member }}"
+
+   - name: Setting fact to find the path of the REXX program
+     set_fact:
+       rexx_path: "CICS-Bank-Sample-Application/automation"
+
+   - name: Update {{ baseDir }}/{{ rexx_path }}/files/showcicslog.rexx to change CICS STC name
+     lineinfile:
+       path: "{{ baseDir }}/{{ rexx_path }}/files/showcicslog.rexx"
+       state: present
+       regexp: '^  IF JNAME.IX = "'
+       line: '  IF JNAME.IX = "{{ CICS_STC }}" & ,'
+     register: change_cics_stc
+
+   - name: Response for changing CICS STC name
+     debug:
+       msg: "{{ change_cics_stc }}"
+
+   - name: Copy {{ baseDir }}/{{ rexx_path }}/files/showcicslog.rexx to {{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }})
+     shell:
+       cmd: cp "{{ baseDir }}/{{ rexx_path }}/files/showcicslog.rexx" "//'{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_rexx }})'"
+     register: copy_file
+
+   - name: Response for copy
+     debug:
+       var: copy_file
+
+   - name: Find CICS JCL PROCLIB
+     zos_job_submit:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ cics_findproc_jcl }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 10
+       return_output: true
+     register: find_cics_proclib
+
+   - name: Setting fact to find CICS JCL PROCLIB
+     set_fact:
+       findproc_execution: "{{find_cics_proclib}}"
+
+   - name: Setting facts 
+     set_fact:
+       JobName: "{{ findproc_execution.jobs[0].job_name }}"
+       JobID: "{{ findproc_execution.jobs[0].job_id }}"
+       JobCode: "{{ findproc_execution.jobs[0].ret_code }}"
+
+   - name: Response
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobCode}}"
+         - Max RC={{JobCode.code}}
+
+   - name: Copy REXX output to /tmp
+     shell:
+       cmd: cp "//'{{ cics_findproc_output }}'" /tmp/findcicsproclib
+     register: copy_rexx_output
+
+   - name: Response for copy REXX output to /tmp
+     debug:
+       msg: "{{ copy_rexx_output }}"
+
+   - name: Search for IEFC001I in /tmp/findcicsproclib
+     shell: "grep -i 'IEFC001I' /tmp/findcicsproclib"
+     changed_when: true
+     failed_when: false
+     register: find_string
+
+   - name: Response for searching IEFC001I
+     debug:
+       msg: "{{ find_string }}"
+
+   - name: Setting fatcs for finding CICS Procedure Library 
+     set_fact:
+       cics_proclib_found_value: "{{ find_string.stdout }}"
+       cics_proclib_found_changed: "{{ find_string.changed }}"
+       cics_proclib_found_rc: "{{ find_string.rc }}"
+
+   - name: Setting fact to parse the line containing CICS Procedure Library
+     set_fact:
+       cics_jcl_proclib: "{{ find_string.stdout.split(' ')[-1] }}"
+
+   - name: Print CICS Procedure Library
+     debug:
+       msg: "{{ cics_jcl_proclib }}"
+
+    # ##########################################################################
+    #
+    # Update CICS procedure jcl:
+    # - Cancel all TSO logged-on userids to make CICS procedure available
+    # - Stop CICS started task
+    #   for update
+    # - Add CBSA load library to DFHRPL
+    # - Remove DB2 load libraries if found
+    # - Add DB2 load libraries to STEPLIB
+    #
+    # ##########################################################################
+
+   - name: Setting facts to update CICS JCL
+     set_fact:
+       user_id_list: [ 'ADCDMST', 'IBMUSER' ]
+       db2_loadlib_list: [ '//         DD DSN={{ DB2_HLQ }}.SDSNLOAD,DISP=SHR', '//         DD DSN={{ DB2_HLQ }}.SDSNLOD2,DISP=SHR' ]
+       where_to_add_db2_libs: "//         DD DSN=&INDEX"    
+
+   - name: Cancel TSO userIDs already logged-on
+     zos_operator:
+       cmd: 'CANCEL U="{{ item }}"'
+       verbose: true
+       wait: true
+       wait_time_s: 10
+     with_items:
+       - "{{ user_id_list }}"       
+     register: cancel_tso_user
+
+   - name: Response for canceling logged-on TSO users
+     debug:
+       msg: "{{ cancel_tso_user }}"
+
+   - name: Stop {{ CICS_STC }} started task
+     zos_operator:
+       cmd: 'F "{{ CICS_STC }}",CEMT P SHUT'
+       verbose: true
+       wait: true
+       wait_time_s: 40
+     register: stop_cics
+
+   - name: Response for CICS normal shutdown
+     debug:
+       msg: "{{ stop_cics }}"      
+
+   - name: Update {{ CICS_STC }} to add CBSA load library to DFHRPL
+     zos_lineinfile:
+       src: "{{ cics_jcl_proclib }}({{ CICS_STC }})"
+       state: present
+       regexp: '^//         DD DSN={{ DS_CICSBSA_LOADLIB }},DISP=SHR'
+       insertafter: '^//         DD DSN=CEE.SCEECICS,DISP=SHR'
+       line: '//         DD DSN={{ DS_CICSBSA_LOADLIB }},DISP=SHR'
+     register: add_cbsa_loadlib
+
+   - name: Response for adding CBSA load library to DFHRPL 
+     debug:
+       msg: "{{ add_cbsa_loadlib }}" 
+
+   - name: Update {{ CICS_STC }} to remove DB2 libraries
+     zos_lineinfile:
+       src: "{{ cics_jcl_proclib }}({{ CICS_STC }})"
+       state: absent
+       regexp: '^{{ item }}'
+     register: remove_db2lib
+     with_items:
+       - "{{ db2_loadlib_list }}"
+
+   - name: Response for removing DB2 libraries
+     debug:
+       msg: "{{ remove_db2lib }}"
+
+   - name: Update {{ CICS_STC }} to add DB2 libraries to STEPLIB
+     zos_lineinfile:
+       src: "{{ cics_jcl_proclib }}({{ CICS_STC }})"
+       state: present
+       regexp: '^{{ item }}'
+       insertbefore: '^{{ where_to_add_db2_libs }}'
+       firstmatch: yes
+       line: '{{ item }}'
+     with_items:
+       - "{{ db2_loadlib_list }}"       
+     register: add_db2_loadlib
+
+   - name: Response for adding DB2 libraries to STEPLIB
+     debug:
+       msg: "{{ add_db2_loadlib }}"
+
+    # ##########################################################################
+    # 
+    # Update CICS SIP member:
+    # - Find CICS SYSIn member
+    # - Copy SIP member to USS /tmp/DFHSIPC
+    # - Add new parameters to /tmp/DFHSIPC
+    # - Check if GenApp is already installed. If so, append LIST(CBSA) to GRPLIST
+    # - Edit GRPLIST parameter
+    # - Copy back /tmp/DFHSIPC to SIP member
+    #
+    # ##########################################################################
+   - name: Setting facts to update CICS SIP member
+     set_fact:
+       add_cics_parms: [ 'DB2CONN=YES', 'CPSMCONN=NO' ]
+
+   - name: Copy CICS JCL to /tmp/cicsjcl
+     shell:
+       cmd: cp "//'{{ cics_jcl_proclib }}({{ CICS_STC }})'" /tmp/cicsjcl
+     register: copy_cicsjcl
+
+   - name: Response for copying CICS JCL to /tmp/cicsjcl
+     debug:
+       msg: "{{ copy_cicsjcl }}"
+
+   - name: Search for SIP in /tmp/cicsjcl
+     shell: "grep -i 'SIP=' /tmp/cicsjcl"
+     changed_when: true
+     failed_when: false
+     register: find_sip
+
+   - name: Response for searching SIP in /tmp/cicsjcl
+     debug:
+       msg: "{{ find_sip }}"
+
+   - name: Setting fact to parse SIP parm
+     set_fact:
+       sip_parm1: "{{ find_sip.stdout.split(',')[0] }}"  
+
+   - name: Print SIP parm
+     debug:
+       msg: "{{ sip_parm1 }}"
+
+   - name: Setting fact
+     set_fact:
+       sip_parm2: "{{ sip_parm1.split(' ')[1] }}"
+
+   - name: Print SIP parm 
+     debug:
+       msg: "{{ sip_parm2 }}"
+
+   - name: Setting fact
+     set_fact:
+       sip_number: "{{ sip_parm2.split('=')[1] }}"  
+
+   - name: Print the last character of SIP member
+     debug:
+       msg: "{{ sip_number }}"
+
+   - name: Setting fact
+     set_fact:
+       dfh_sip: "DFH\\$SIP"
+
+   - name: Setting fact for SIP member
+     set_fact:
+       sip_member: "{{ dfh_sip }}{{ sip_number }}"
+
+   - name: Print SIP member
+     debug:
+       msg: "{{ sip_member }}"
+
+   - name: Copy CICS SIP member to /tmp/DFHSIPC
+     shell:
+       cmd: cp "//'{{ CICS_SYSIN_LIB }}({{ sip_member }})'" /tmp/DFHSIPC
+     register: copy_sip
+
+   - name: Response for copying CICS SIP member to /tmp/DFHSIPC
+     debug:
+       msg: "{{ copy_sip }}"
+
+   - name: Update /tmp/DFHSIPC to add new parameters
+     zos_lineinfile:
+       src: /tmp/DFHSIPC
+       state: present
+       regexp: '^{{ item }}'
+       insertafter: '^TCPIP=YES'
+       line: '{{ item }}'
+     with_items:
+       - "{{ add_cics_parms }}"  
+     register: add_new_parms
+
+   - name: Response for adding new parms to /tmp/DFHSIPC
+     debug:
+       msg: "{{ add_new_parms }}"
+
+   - name: Search for GRPLIST in /tmp/DFHSIPC
+     shell: "grep -i 'GRPLIST' /tmp/DFHSIPC"
+     changed_when: true
+     failed_when: false
+     register: find_string
+
+   - name: Response for searching GRPLIST in /tmp/DFHSIPC
+     debug:
+       msg: "{{ find_string }}"
+
+   - name: Setting fatcs for GRPLIST
+     set_fact:
+       grplist_value: "{{ find_string.stdout }}"
+       grplist_changed: "{{ find_string.changed }}"
+       grplist_rc: "{{ find_string.rc }}"
+
+   - name: Setting fatcs if GENALIST found in GRPLIST
+     set_fact:
+       grp_found_before_update: "GENALIST"
+       grp_found_after_update: "GENALIST,CBSA"
+
+   - name: Setting fatcs to update GRPLIST if GENALIST found
+     set_fact:
+       update_grp_found_gena: "{{ grplist_value | regex_replace(grp_found_before_update, grp_found_after_update) }}"
+
+   - name: Update CRPLIST if GENALIST found and CBSA not found
+     zos_lineinfile:
+       src: /tmp/DFHSIPC
+       regexp: '^GRPLIST'
+       line: '{{ update_grp_found_gena }}'
+       state: present
+     register: update_grplist_if_found
+     when: ("GENALIST" in grplist_value) and ("CBSA" not in grplist_value)
+
+   - name: Response for updating GRPLIST when GENALIST found and CBSA not found
+     debug:
+       msg: "{{ update_grplist_if_found }}"
+     when: (update_grplist_if_found is not skipped)
+       
+   - name: Setting facts if GENALIST not found in GRPLIST
+     set_fact:
+       grp_not_found_before_update: "\\)"
+       grp_not_found_after_update: ",CBSA)"
+
+   - name: Setting facts to update GRPLIST if GENALIST not found
+     set_fact:
+       update_grp_not_found_gena: "{{ grplist_value | regex_replace(grp_not_found_before_update, grp_not_found_after_update) }}"
+
+   - name: Update GRPLIST if GENALIST and CBSA not found
+     zos_lineinfile:
+       src: /tmp/DFHSIPC
+       state: present
+       regexp: '^GRPLIST='
+       line: '{{ update_grp_not_found_gena }}'
+     register: update_grplist_if_not_found
+     when: ("GENALIST" not in grplist_value) and ("CBSA" not in grplist_value)
+
+   - name: Response for updating GRPLIST when GENALIST and CBSA not found
+     debug:
+       msg: "{{ update_grplist_if_not_found }}"
+     when: (update_grplist_if_not_found is not skipped)
+
+   - name: Copy back /tmp/DFHSIPC to CICS SIP member
+     shell:
+       cmd: cp /tmp/DFHSIPC "//'{{ CICS_SYSIN_LIB }}({{ sip_member }})'"
+     register: copyback_sip
+     changed_when: true
+     failed_when: false
+
+   - name: Response for copying /tmp/DFHSIPC to CICS SIP member
+     debug:
+       msg: "{{ copyback_sip }}"
+
+    # ##########################################################################
+    #
+    # Define CBSA CICS resources:
+    # - Check if GenApp is already installed, if so, update BANK member to
+    #   - remove DB2CONN definition
+    #   - add a new DB2TRAN resource for CBSA REST API 
+    #   - remove CBSA TCPIPSERVICE definition for z/OS Connect
+    #   - make other changes to define CBSA CICS resources
+    #   if not, update BANK member to make changes to define CBSA CICS resources
+    # - Update STEPLIB in HBANKCSD jcl according to the environment on which
+    #   CICS is running
+    # - Update CICS CSD data set in HBANKCSD jcl according to the environment
+    #   on which CICS is running  
+    # - Submit jcl
+    #
+    # ##########################################################################
+   - name: Setting facts
+     set_fact:
+       check_cicsres_member: "CICSRCHK"
+       cics_list_output: "CBSA.CICSLIST.OUTPUT"
+       cicsres_member: "BANK"
+       cicsdef_member: "HBANKCSD"
+       find_grp: " DELETE GROUP"
+       update_grp: " DELETE ALL GROUP(BANK) REMOVE"
+       find_db2conn1: " DEFINE DB2CONN(D"
+       update_db2conn1: " DEFINE DB2CONN({{ DB2SSID }}) GROUP(BANK)"
+       find_db2conn2: " CONNECTERROR(SQLCODE) DB2ID(D"
+       update_db2conn2: " CONNECTERROR(SQLCODE) DB2ID({{ DB2SSID }}) MSGQUEUE1(CSMT)"
+       find_zcee_port: "  PORTNUMBER(30709)"
+       update_zcee_port: "  PORTNUMBER(1026)"
+       find_list: " ADD GROUP(BANK) LIST"
+       update_list: " ADD GROUP(BANK) LIST(CBSA)"
+
+   - name: Delete data set {{ cics_list_output }}
+     zos_data_set:
+       name: "{{ cics_list_output }}"
+       state: absent
+     register: delete_ds_result
+
+   - name: Response for deleting data set {{ cics_list_output }}
+     debug:
+       msg: "{{ delete_ds_result }}"
+
+   - name: Delete member {{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})"
+       state: absent
+       type: MEMBER
+     register: delete_member
+
+   - name: Response for deleting member {{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})
+     debug:
+       msg: "{{ delete_member }}"
+
+   - name: Create member {{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})
+     zos_data_set:
+       name: "{{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})"
+       type: MEMBER
+     when: ("GENALIST" in grplist_value)
+     register: create_member
+
+   - name: Response for creating member {{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})
+     debug:
+       msg:
+         - "{{ create_member }}"
+
+   - name: Write a jcl to check the availability of DB2CONN and TCPIPSERVICES installed by GenApp
+     zos_blockinfile:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})"
+       marker: "# {mark} ANSIBLE MANAGED BLOCK WRITE JCL"
+       block: |
+         //CICSRCHK   JOB CLASS=A,MSGCLASS=H,MSGLEVEL=(1,1),NOTIFY=&SYSUID
+         //DFHCSDUP  EXEC PGM=DFHCSDUP
+         //STEPLIB   DD  DISP=SHR,DSN={{ CICS_HLQ }}.SDFHLOAD
+         //DFHCSD    DD DISP=SHR,DSN={{ CICS_CSD }}
+         //SYSPRINT  DD DISP=(NEW,CATLG),DSN={{ cics_list_output }},
+         //    DCB=(RECFM=VBA,LRECL=3600,BLKSIZE=27998),UNIT=3390,
+         //    SPACE=(TRK,(15,15),RLSE)
+         //SYSIN     DD *              
+           LIST LIST(GENALIST) OBJECTS
+     when: ("GENALIST" in grplist_value)
+     register: write_jcl
+
+   - name: Remove marker from jcl CICSRCHK
+     zos_lineinfile:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})"
+       state: absent
+       regexp: '^#'
+     when: (write_jcl is not skipped)  
+     register: remove_marker
+
+   - name: Response for removing marker from jcl CICSRCHK
+     debug:
+       msg: "{{ remove_marker }}"
+     when: (remove_marker is not skipped)   
+
+   - name: Submit jcl {{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }}) to check the availability of DB2CONN and TCPIPSERVICES installed by GenApp
+     zos_job_submit:
+       src: "{{ cbsa_ansible_jcl_ds }}({{ check_cicsres_member }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 30
+       return_output: true
+     when: (write_jcl is not skipped)  
+     register: submit_cicsrchk
+
+   - name: Setting fact for job CICSRCHK
+     set_fact:
+       job_cicsrchk: "{{submit_cicsrchk}}"
+     when: (submit_cicsrchk is not skipped)  
+
+   - name: Setting facts for checking the job result CICSRCHK
+     set_fact:
+       CICSRJobName: "{{ job_cicsrchk.jobs[0].job_name }}"
+       CICSRJobID: "{{ job_cicsrchk.jobs[0].job_id }}"
+       CICSRJobCode: "{{ job_cicsrchk.jobs[0].ret_code }}"
+     when: (submit_cicsrchk is not skipped)
+
+   - name: Response for the execution of job CICSRCHK
+     debug:
+       msg:
+         - Job Name={{CICSRJobName}}
+         - Job ID={{CICSRJobID}}
+         - "{{CICSRJobCode}}"
+         - Max RC={{CICSRJobCode.code}}
+     when: (submit_cicsrchk is not skipped)      
+
+   - name: Find DB2CONN in {{ cics_list_output }} 
+     zos_find:
+       patterns: "{{ cics_list_output }}"
+       contains: 'DB2CONN'
+     when: (submit_cicsrchk is not skipped)
+     register: find_db2conn
+
+   - name: Response for finding DB2CONN
+     debug:
+       msg: "{{ find_db2conn }}"
+     when: (find_db2conn is not skipped)
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to add BEGIN marker for DB2CONN
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^* BEGIN ANSIBLE MANAGED BLOCK FOR DB2CONN *'
+       insertbefore: '^ DEFINE DB2CONN('
+       line: '* BEGIN ANSIBLE MANAGED BLOCK FOR DB2CONN *'
+     when: (find_db2conn is not skipped)
+     register: add_begin_marker_db2conn
+
+   - name: Response for adding BEGIN marker for DB2CONN
+     debug:
+       msg: "{{ add_begin_marker_db2conn }}"
+     when: (add_begin_marker_db2conn is not skipped)  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to add END marker for DB2CONN
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^* END ANSIBLE MANAGED BLOCK FOR DB2CONN *'
+       insertafter: '^ PLAN(CBSA)'
+       line: '* END ANSIBLE MANAGED BLOCK FOR DB2CONN *'
+     when: (find_db2conn is not skipped)
+     register: add_end_marker_db2conn
+
+   - name: Response for adding END marker for DB2CONN
+     debug:
+       msg: "{{ add_end_marker_db2conn }}"
+     when: (add_end_marker_db2conn is not skipped)  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to remove DB2CONN resource definition
+     zos_blockinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: absent
+       marker: "* {mark} ANSIBLE MANAGED BLOCK FOR DB2CONN *"
+     when: (find_db2conn is not skipped)
+     register: remove_db2conn_def
+
+   - name: Response for removing DB2CONN resource definition
+     debug:
+       msg: "{{ remove_db2conn_def }}"
+     when: (remove_db2conn_def is not skipped)
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to define a new DB2TRAN resource for CBSA REST API
+     zos_blockinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       insertbefore: '^ ADD GROUP(BANK)'
+       marker: "* {mark} ANSIBLE MANAGED BLOCK TO ADD A DB2TRAN FOR CBSA REST API *"
+       block: |
+          DEFINE DB2TRAN(ZCEE) GROUP({{ CBSA_GROUP }})
+          ENTRY(HBANK) TRANSID(CSMI)
+     when: (find_db2conn is not skipped)
+     register: add_db2tran_def
+
+   - name: Response for adding the new DB2TRAN resource for CBSA REST API
+     debug:
+       msg: "{{ add_db2tran_def }}"
+     when: (add_db2tran_def is not skipped)
+
+   - name: Find TCPIPSERVICE in {{ cics_list_output }}
+     zos_find:
+       patterns: "{{ cics_list_output }}"
+       contains: 'TCPIPSERVICE'
+     when: (submit_cicsrchk is not skipped)  
+     register: find_tcpips
+
+   - name: Response for finding TCPIPSERVICE
+     debug:
+       msg: "{{ find_tcpips }}"
+     when: (find_tcpips is not skipped)  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to add BEGIN marker
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^* BEGIN ANSIBLE MANAGED BLOCK FOR TCPIPSERVICE *'
+       insertbefore: '^DEFINE TCPIPSERVICE(ZOSEE) GROUP(BANK)'
+       line: '* BEGIN ANSIBLE MANAGED BLOCK FOR TCPIPSERVICE *'
+     when: (find_tcpips is not skipped)
+     register: add_begin_marker
+
+   - name: Response for adding BEGIN marker
+     debug:
+       msg: "{{ add_begin_marker }}"
+     when: (add_begin_marker is not skipped)  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to add END marker
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^* END ANSIBLE MANAGED BLOCK FOR TCPIPSERVICE *'
+       insertafter: '^  BACKLOG(00000)'
+       line: '* END ANSIBLE MANAGED BLOCK FOR TCPIPSERVICE *'
+     when: (find_tcpips is not skipped)
+     register: add_end_marker
+
+   - name: Response for adding END marker
+     debug:
+       msg: "{{ add_end_marker }}"
+     when: (add_end_marker is not skipped)  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to remove TCPIPSERVICE(ZOSEE) resource definition
+     zos_blockinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: absent
+       marker: "* {mark} ANSIBLE MANAGED BLOCK FOR TCPIPSERVICE *"
+     when: (find_tcpips is not skipped)
+     register: remove_tcpips_def
+
+   - name: Response for removing TCPIPSERVICE(ZOSEE) resource definition
+     debug:
+       msg: "{{ remove_tcpips_def }}"
+     when: (remove_tcpips_def is not skipped)  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to delete GROUP(BANK)
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^{{ find_grp }}'
+       line: '{{ update_grp }}'
+     register: del_grp
+
+   - name: Response for deleting GROUP(BANK)
+     debug:
+       msg: "{{ del_grp }}"
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to change DB2 Connection-1
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^{{ find_db2conn1 }}'
+       line: '{{ update_db2conn1 }}'
+     register: update_db2conn1
+
+   - name: Response for updating DB2 Connection-1
+     debug:
+       msg: "{{ update_db2conn1 }}"  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to change DB2 Connection-2
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^{{ find_db2conn2 }}'
+       line: '{{ update_db2conn2 }}'
+     register: update_db2conn2
+
+   - name: Response for updating DB2 Connection-2
+     debug:
+       msg: "{{ update_db2conn2 }}"  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to change ZCEE port
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^{{ find_zcee_port }}'
+       line: '{{ update_zcee_port }}'
+     when: (find_tcpips is skipped )
+     register: update_port
+
+   - name: Response for updating ZCEE port
+     debug:
+       msg: "{{ update_port }}"
+     when: (update_port is not skipped)  
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsres_member }})" to rename LIST
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsres_member }})"
+       state: present
+       regexp: '^{{ find_list }}'
+       line: '{{ update_list }}'
+     register: rename_list
+
+   - name: Response for renaming LIST
+     debug:
+       msg: "{{ rename_list }}"
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsdef_member }})" to change STEPLIB
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsdef_member }})"
+       state: present
+       regexp: '^//STEPLIB  DD DSN='
+       line: '//STEPLIB  DD DSN={{ CICS_LOADLIB }},DISP=SHR'
+     register: update_steplib
+
+   - name: Response for updating STEPLIB
+     debug:
+       msg: "{{ update_steplib }}"
+
+   - name: Update "{{ DS_JCL_INSTALL }}({{ cicsdef_member }})" to change CICS CSD
+     zos_lineinfile:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsdef_member }})"
+       state: present
+       regexp: '^//DFHCSD   DD DSN='
+       line: '//DFHCSD   DD DSN={{ CICS_CSD }},DISP=SHR'
+     register: update_csd
+
+   - name: Response for updating CICS CSD
+     debug:
+       msg: "{{ update_csd }}"  
+
+   - name: Define CBSA CICS resources {{ DS_JCL_INSTALL }}({{ cicsdef_member }})
+     zos_job_submit:
+       src: "{{ DS_JCL_INSTALL }}({{ cicsdef_member }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 30
+       return_output: true
+     register: cicsdef_job
+
+   - name: Setting fact for cics resource job {{ cicsdef_member }}
+     set_fact:
+       cicsdef_execution: "{{cicsdef_job}}"
+
+   - name: Setting facts for the execution of cics resource job {{ cicsdef_member }}
+     set_fact:
+       JobName: "{{ cicsdef_execution.jobs[0].job_name }}"
+       JobID: "{{ cicsdef_execution.jobs[0].job_id }}"
+       JobCode: "{{ cicsdef_execution.jobs[0].ret_code }}"
+
+   - name: Response for the execution of cics resource job {{ cicsdef_member }}
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobCode}}"
+         - Max RC={{JobCode.code}}
+
+    # ##########################################################################
+    #
+    # Start CICS
+    #
+    # ##########################################################################
+   - name: Start {{ CICS_STC }}
+     zos_operator:
+       cmd: '{{ CICS_START_CMD }}'
+       verbose: true
+       wait: true
+       wait_time_s: 30
+     register: start_cics
+     when: (JobCode.code | int <= 4)
+
+   - name: Response for starting CICS
+     debug:
+       msg: "{{ start_cics }}"
+
+    # ##########################################################################
+    #
+    # Remove USS temporary files
+    #
+    # ##########################################################################
+       
+   - name: Setting fact to remove USS temporary files
+     set_fact:
+       uss_temp_files: [ 'cicsjcl', 'findcicsproclib', 'DFHSIPC' ]       
+
+   - name: Delete USS temporary files
+     file:
+       path: "/tmp/{{ item }}"
+       state: absent
+     with_items:
+       - "{{ uss_temp_files }}"     
+     register: remove_temp_files
+
+   - name: Response for removing USS temporary files
+     debug:
+       msg: "{{ remove_temp_files }}"

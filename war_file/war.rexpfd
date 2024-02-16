@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?><rexpfd>
+    <destination path="LAPTOP-G4R02IV0.nazare-cbsa-test1.fyre.ibm.com:/u/cicsuser/CICSTS56/CBSAWLP/wlp/usr/servers/defaultServer/dropins"/>
+    <options createDirectoryStructure="false" createSelectedOnly="true" descriptionFilePath="/warFile/war.rexpfd" overWriteExistingFiles="true" reviewSynchronize="false" saveSettings="true"/>
+    <selectedElements>
+        <file path="/warFile/com.ibm.cics.cip.bank.LibertyAPI.webUI.war"/>
+    </selectedElements>
+</rexpfd>

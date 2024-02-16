@@ -1,0 +1,3 @@
+CBSA/cobol/BNKMENU.cbl
+CBSA/testcase/TBNKMENU.cbl
+CBSA/testcfg/BNKMENU.bzucfg

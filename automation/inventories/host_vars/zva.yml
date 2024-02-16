@@ -1,0 +1,111 @@
+---
+################################################################################
+# Copyright (c) IBM Corporation 2021
+################################################################################
+
+################################################################################
+# Description of the properties used in this configuration:
+# - Property `PYZ` is the python installation home path on the z/OS managed node (target),
+#    e.g, pyz: "/usr/lpp/IBM/cyp/v3r8/pyz"
+# - Property `ZOAU` is the ZOAU installation home on the z/OS managed node (target),
+#    e.g, zoau: "/usr/lpp/IBM/zoautil"
+# - property `ansible_python_interpreter` is the z/OS managed node (target) Python
+#    binary installation path, e.g, ansible_python_interpreter: "{{PYZ}}/bin/python3.8"
+#
+# Note, PYZ and ZOAU environment variables must be configured.
+################################################################################
+
+# IBM Open Enterprise SDK for Python 3.9
+PYZ: "/usr/lpp/IBM/cyp/v3r9/pyz"
+# IBM Open Enterprise SDK for Python 3.10
+#PYZ: "/usr/lpp/IBM/cyp/v3r10/pyz"
+
+ZOAU: "/usr/lpp/IBM/zoautil"
+
+################################################################################
+# Do not configure, variable substituion will correctly set the
+# variable`ansible_python_interpreter`
+################################################################################
+
+# IBM Open Enterprise SDK for Python 3.9
+ansible_python_interpreter: "{{ PYZ }}/bin/python3.9"
+# IBM Open Enterprise SDK for Python 3.10
+#ansible_python_interpreter: "{{ PYZ }}/bin/python3.10"
+
+# The location of ROCKET z Open Source TOOLS
+# Please uncomment and use the TOOLS_ROOT variable perfectly suited for your z/OS version
+# for z/OS 2.4
+#TOOLS_ROOT: "/rsusr/ported"
+# for z/OS 2.5
+TOOLS_ROOT: "/usr/lpp/Rocket/rsusr/ported"
+
+TOOLS_PATH: "{{TOOLS_ROOT}}/bin"
+GIT_SHELL: "{{ TOOLS_PATH }}/bash"
+GIT_EXEC_PATH: "{{ TOOLS_PATH }}/git-core"
+GIT_TEMPLATE_DIR: "{{ TOOLS_ROOT }}/share/git-core/templates"
+
+JAVA_HOME: "/usr/lpp/java/J8.0_64"
+
+############## Enviroment variables for Extended ADCD - SANDBOX ###############
+###################################### BEGIN ##################################
+baseDir: "/S0W1/var/cbsa"
+
+# ADCD z/OS version
+# Please uncomment and use the ADCD_SYS_VER variable perfectly suited for your ADCD z/OS version
+# issue command "D SYMBOLS" to find &SYSVER
+# for ADCD z/OS 2.4
+#ADCD_SYS_VER: "Z24D"
+# for ADCD z/OS 2.5
+ADCD_SYS_VER: "Z25A"
+
+CICS_HLQ: "DFH560.CICS"
+CICS_SYSIN_LIB: "DFH560.SYSIN"
+CICS_LOADLIB: "{{ CICS_HLQ }}.SDFHLOAD"
+CICS_CSD: "{{ CICS_HLQ }}.DFHCSD"
+CICS_STC: "CICSTS56"
+CICS_START_CMD: "S {{ CICS_STC }}"
+
+DB2SSID: "DBCG"
+DB2_HLQ: "DSNC10"
+DB2_LOADLIB1: "{{ DB2_HLQ }}.SDSNLOAD"
+DB2_LOADLIB2: "{{ DB2_HLQ }}.SDSNLOD2"
+DB2_EXITLIB: "{{ DB2_HLQ }}.{{ DB2SSID }}.SDSNEXIT"
+DB2RUN: "{{ DB2_HLQ }}.{{ DB2SSID }}"
+DB2PROG: "DSNTEP2"
+DB2PLAN: "DSNTEP12"
+
+COBOL_HLQ: "IGY630"
+####################################### END ###################################
+
+####################### Variables common to all hosts #########################
+###################################### BEGIN ##################################
+CBSA_ZFS_DSN: "CBSA.VAR.ZFS"
+localRepoCbsa: "{{ baseDir }}/CICS-Bank-Sample-Application"
+gitRepoCbsa: "git@github.ibm.com:mathieu-dalbin/CICS-Bank-Sample-Application.git"
+branchCbsa: "AWS-Demo"
+
+CBSA_GROUP: "BANK"
+
+SQLID: "IBMUSER"
+
+DS_JCL_INSTALL: "CBSA.JCL.INSTALL"
+DS_CICSBSA_ASM: "CBSA.CICSBSA.ASM"
+DS_CICSBSA_BMS: "CBSA.CICSBSA.BMS"
+DS_CICSBSA_BUILDJCL: "CBSA.CICSBSA.BUILDJCL"
+DS_CICSBSA_CBSAMOD: "CBSA.CICSBSA.CBSAMOD"
+DS_CICSBSA_COBOL: "CBSA.CICSBSA.COBOL"
+DS_CICSBSA_COPYLIB: "CBSA.CICSBSA.COPYLIB"
+DS_CICSBSA_DBRM: "CBSA.CICSBSA.DBRM"
+DS_CICSBSA_LKED: "CBSA.CICSBSA.LKED"
+DS_CICSBSA_LOADLIB: "CBSA.CICSBSA.LOADLIB"
+DS_CICSBSA_REORG: "CBSA.CICSBSA.REORG"
+DS_DB2_JCL_INSTALL: "CBSA.DB2.JCL.INSTALL"
+
+ZOSCONNECT_STC: "ZOSCSRV" 
+zcee_server_dir: "/var/zosconnect/v3r0/servers/defaultServer"
+zcee_resources_dir: "{{ zcee_server_dir }}/resources/zosconnect"
+zcee_user: "ibmuser"
+zcee_pw: "sys1"
+apis_dir: "apis"
+services_dir: "services"
+####################################### END ###################################

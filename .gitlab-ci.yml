@@ -1,0 +1,75 @@
+# Job templates located in /opt/gitlab/embedded/service/gitlab-rails/lib/gitlab/ci/templates (DAT Linux machine - 10.3.20.96)
+include:
+    - template: Preparation.gitlab-ci.yml
+    - template: Import_zAppBuild.gitlab-ci.yml
+    - template: BuildAndTest.gitlab-ci.yml
+
+variables:
+    HLQ: "GITLAB.CBSA"
+    APPLICATION_NAME: "CBSA"
+    UCD_APPLICATION: "retirementCalculator-GitLab"
+    UCD_COMPONENT: "retirementCalculator-GitLab"
+    CONFIG_ARTIFACTORY: "${CI_PROJECT_DIR}/${CI_PROJECT_NAME}/application-conf/artifactory.properties"
+    CONFIG_REPOSITORY_INFO: "${CI_PROJECT_DIR}/${CI_PROJECT_NAME}/application-conf/repositoryInfo.properties"
+    CONFIG_CODE_REVIEW: "${CI_PROJECT_DIR}/${CI_PROJECT_NAME}/application-conf/codeReview.properties"
+    PROPERTY_GROUP_FILE: "${CI_PROJECT_DIR}/${CI_PROJECT_NAME}/application-conf/property-group.xml"
+
+stages:
+    - Preparation
+    - Import
+    - Build and Test
+    - Environment Creation
+    - Environment Cleanup
+
+Import zAppBuild:
+    needs: ["Preparation"]
+    inherit:
+        variables: false
+    variables:
+        CI_BUILDS_DIR: "/u/gitlab/gitlab-runner/zos/builds"
+        GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_PROJECT_NAME/$CI_COMMIT_REF_NAME/dbb-zappbuild
+        ZAPPBUILD_BRANCH: "main"
+
+Build and Test:
+    needs: ["Import zAppBuild"]
+    variables:
+        ZAPPBUILD: "$CI_PROJECT_DIR/dbb-zappbuild"
+        BUILD_TYPE: "--fullBuild"
+        GIT_STRATEGY: none
+        GIT_CHECKOUT: "false"
+
+.Code Review:
+    needs: ["Build and Test"]
+    variables:
+        GIT_STRATEGY: none
+        GIT_CHECKOUT: "false"
+        CODE_REVIEW_OPTIONS: "--propertyGroupFile ${PROPERTY_GROUP_FILE} --codepage IBM-1047"
+
+
+.Wazi Analyze:
+    needs: ["Build and Test"]
+
+.Packaging:
+    needs: ["Code Review", "Wazi Analyze"]
+    variables:
+        GIT_STRATEGY: none
+        GIT_CHECKOUT: "false"
+
+.Deployment:
+    needs: ["Packaging"]
+    variables:
+        GIT_STRATEGY: none
+        GIT_CHECKOUT: "false"
+        DEPLOYMENT_TARGET: "Integration-Test"
+
+.Environment Creation:
+    needs: ["Deployment"]
+    variables:
+        GIT_STRATEGY: none
+        GIT_CHECKOUT: "false"
+
+.Environment Cleanup:
+    needs: ["Environment Creation"]
+    variables:
+        GIT_STRATEGY: none
+        GIT_CHECKOUT: "false"

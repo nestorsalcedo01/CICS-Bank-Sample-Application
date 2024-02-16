@@ -1,0 +1,109 @@
+###############################################################################
+# Licensed Materials - Property of IBM
+#
+# (c) Copyright IBM Corp. 2014,2020.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+###############################################################################
+
+---
+- hosts: "{{ host | default('sandbox1') }}"
+  collections:
+    - ibm.ibm_zos_core
+  gather_facts: no
+  vars:
+    tgt_tmp_dir: "/tmp/ansible"
+    ctl_tmp_dir: "/tmp/ansible"
+  environment: "{{ environment_vars }}"
+
+  tasks:
+   - name: Setting facts 
+     set_fact:
+       jclinstall_file: "jclInstall"
+       crelib_member: "CRELIBS"
+       cbsa_asm: "asm"
+       cbsa_bms: "bms"
+       cbsa_buildjcl: "buildjcl"
+       cbsa_cobol: "cobol"
+       cbsa_copylib: "copylib"
+       cbsa_linkedit: "linkedit"
+       cbsa_reorg: "reorg"
+       cbsa_db2_jcl_install: "Db2_jcl_install"
+
+   - name: Allocate {{ DS_JCL_INSTALL }}
+     zos_data_set:
+       name: "{{ DS_JCL_INSTALL }}"
+       type: pdse
+       space_primary: 60
+       space_secondary: 30
+       space_type: CYL
+       record_format: FB
+       record_length: 80
+       block_size: 800
+       directory_blocks: 20
+       state: present
+     register: alloc_jclinstall
+
+   - name: Response for allocating {{ DS_JCL_INSTALL }}
+     debug:
+       msg: "{{ alloc_jclinstall }}"
+
+   - name: Copy "{{ localRepoCbsa }}/{{ jclinstall_file }}" to {{ DS_JCL_INSTALL }}
+     zos_copy:
+       src: "{{ localRepoCbsa }}/{{ jclinstall_file }}/"
+       dest: "{{ DS_JCL_INSTALL }}"
+       remote_src: true
+     register: copy_jclinstall
+
+   - name: Response for transferring files from USS to MVS
+     debug:
+       msg: "{{ copy_jclinstall }}"       
+
+   - name: Submit the jcl "{{ DS_JCL_INSTALL }}({{ crelib_member }})" to allocate all requires libraries
+     zos_job_submit:
+       src: "{{ DS_JCL_INSTALL }}({{ crelib_member }})"
+       location: DATA_SET
+       wait: true
+       wait_time_s: 30
+       return_output: true
+     register: submit_jclinstall
+
+   - name: Setting fact for job result
+     set_fact:
+       job_execution_result: "{{submit_jclinstall}}"
+
+   - name: Setting facts for checking the job result 
+     set_fact:
+       JobName: "{{ job_execution_result.jobs[0].job_name }}"
+       JobID: "{{ job_execution_result.jobs[0].job_id }}"
+       JobCode: "{{ job_execution_result.jobs[0].ret_code }}"
+
+   - name: Response for the execution of job
+     debug:
+       msg:
+         - Job Name={{JobName}}
+         - Job ID={{JobID}}
+         - "{{JobCode}}"
+         - Max RC={{JobCode.code}}
+
+   - name: Copy GitHub folders into CBSA libraries 
+     zos_copy:
+       src: "{{ item.src }}/"
+       dest: "{{ item.dest }}"
+       remote_src: true
+     with_items: 
+       - { src: "{{ localRepoCbsa }}/CBSA/{{ cbsa_asm }}/" , dest: "{{ DS_CICSBSA_ASM }}" } 
+       - { src: "{{ localRepoCbsa }}/CBSA/{{ cbsa_bms }}/" , dest: "{{ DS_CICSBSA_BMS }}" } 
+       - { src: "{{ localRepoCbsa }}/{{ cbsa_buildjcl }}/" , dest: "{{ DS_CICSBSA_BUILDJCL }}" } 
+       - { src: "{{ localRepoCbsa }}/CBSA/{{ cbsa_cobol }}/" , dest: "{{ DS_CICSBSA_COBOL }}" }
+       - { src: "{{ localRepoCbsa }}/CBSA/{{ cbsa_copylib }}/" , dest: "{{ DS_CICSBSA_COPYLIB }}" }
+       - { src: "{{ localRepoCbsa }}/CBSA/{{ cbsa_linkedit }}/" , dest: "{{ DS_CICSBSA_LKED }}" }
+       - { src: "{{ localRepoCbsa }}/{{ cbsa_reorg }}/" , dest: "{{ DS_CICSBSA_REORG }}" } 
+       - { src: "{{ localRepoCbsa }}/{{ cbsa_db2_jcl_install }}/" , dest: "{{ DS_DB2_JCL_INSTALL }}" } 
+     register: copy_files
+     when: (JobCode.code | int == 0) 
+
+   - name: Response for transferring files from USS to MVS
+     debug:
+       msg: "{{ copy_files }}"

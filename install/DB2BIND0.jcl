@@ -1,0 +1,152 @@
+//* Licensed Materials - Property of IBM
+//*
+//* (c) Copyright IBM Corp. 2016,2020.
+//*
+//* US Government Users Restricted Rights - Use, duplication or
+//* disclosure restricted by GSA ADP Schedule Contract
+//* with IBM Corp.
+//*
+//*
+//* Please change @DB2_HLQ@ to the high level qualifiers of your
+//* system's DB2 datasets (SDSNLOAD et cetera)
+//*
+//* Please change @BANK_DBRMLIB@ to the name you chose
+//* for the DBRMLIB provided by Hursley Bank
+//*
+//* Please change @DB2_SUBSYSTEM@ to the name of your chosen DB2
+//* subsystem (which must be running on the same MVS image as this
+//* batch job)
+//*
+//* Please change @BANK_PACKAGE@ to the name you have chosen for the
+//* package name in DB2, for example PHBANK.
+//*
+//* Please change @DB2_OWNER@ to the userid that will own the DB2
+//* resources
+//*
+//* Please change @BANK_PLAN@ to the desired DB2 plan name
+//*
+//* Please change @DB2_DSNTEP_PLAN@ to the name of the plan that was
+//* used for the DSNTEP2 utility program
+//*
+//* Please change @DB2_DSNTEP_LOADLIB@ to the name of the load library
+//* that contains the DSNTEP2 utility program
+//*
+//* Please change @BANK_USER@ to the userid that will be accessing the
+//* plan
+//BIND    EXEC PGM=IKJEFT01
+//STEPLIB  DD  DISP=SHR,DSN=@DB2_HLQ@.SDSNEXIT
+//         DD  DISP=SHR,DSN=@DB2_HLQ@.SDSNLOAD
+//DBRMLIB  DD DISP=SHR,
+//     DSN=@BANK_DBRMLIB@(BANKDATA)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(CREACC)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(CRECUST)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(CUSTCTRL)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(DELACC)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(DELCUS)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(INQACC)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(INQACCCU)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(DBCRFUN)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(UPDACC)
+//     DD DISP=SHR,DSN=@BANK_DBRMLIB@(XFRFUN)
+//SYSPRINT DD  SYSOUT=*
+//SYSTSPRT DD  SYSOUT=*
+//SYSUDUMP DD  SYSOUT=*
+//SYSTSIN DD *
+ DSN S(@DB2_SUBSYSTEM@)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(CREACC) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(CRECUST) -
+ ACTION(ADD)
+
+BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(CUSTCTRL) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(DBCRFUN) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(DELACC) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(DELCUS) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(INQACC) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(INQACCCU) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(INQACCTY) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(BANKDATA) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(UPDACC) -
+ ACTION(ADD)
+
+ BIND PACKAGE(@BANK_PACKAGE@) OWNER(@DB2_OWNER@) -
+ QUALIFIER(@DB2_OWNER@) -
+ MEMBER(XFRFUN) -
+ ACTION(ADD)
+
+  BIND PLAN(@BANK_PLAN@) -
+   OWNER(@DB2_OWNER@) -
+   ISOLATION(UR) -
+   PKLIST( -
+   NULLID.*,@BANK_PACKAGE@.* )
+ END
+//********************************************************************
+//***    GRANT EXECUTE AUTHORITY ON PLAN @BANK_PLAN@
+//********************************************************************
+//GRANT EXEC PGM=IKJEFT01,REGION=0M
+//STEPLIB  DD  DISP=SHR,DSN=@DB2_HLQ@.SDSNEXIT
+//         DD  DISP=SHR,DSN=@DB2_HLQ@.SDSNLOAD
+//SYSUDUMP DD SYSOUT=*
+//SYSPRINT DD SYSOUT=*
+//SYSTSPRT DD SYSOUT=*
+//SYSTSIN DD *
+DSN SYSTEM(@DB2_SUBSYSTEM@)
+RUN PROGRAM(DSNTEP2) PLAN(@DB2_DSNTEP_PLAN@) -
+LIB('@DB2_DSNTEP_LOADLIB@')
+//SYSIN DD *
+ SET CURRENT SQLID = '@DB2_OWNER@';
+ GRANT EXECUTE ON PLAN @BANK_PLAN@ TO @BANK_USER@;
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+     @DB2_OWNER@.STMNT TO @BANK_USER@;
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+     @DB2_OWNER@.CUSTOMER TO @BANK_USER@;
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+     @DB2_OWNER@.ACCOUNT TO @BANK_USER@;
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+     @DB2_OWNER@.PROCTRAN TO @BANK_USER@;
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+     @DB2_OWNER@.REJTRAN TO @BANK_USER@;
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+     @DB2_OWNER@.CONTROL TO @BANK_USER@;
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+     @DB2_OWNER@.WORKLOAD TO @BANK_USER@;
