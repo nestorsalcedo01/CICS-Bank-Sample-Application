@@ -156,35 +156,61 @@ sequenceDiagram
 Basado en el análisis del código fuente y los artefactos del repositorio:
 
 ```mermaid
-mindmap
-  root((CBSA<br/>Calidad))
-    Disponibilidad
-      Target 99.999%
-      CICS SYNCPOINT / ROLLBACK
-      DB2 Deadlock Retry hasta 6 intentos XFRFUN
-      ABNDPROC centralizado para abend handling
-      Named Counter ENQ/DEQ serialization
-    Seguridad
-      RACF DFHDB2.AUTHTYPE.HBANK y DBCG
-      Basic Auth ibmuser/SYS1 RIESGO DEMO
-      requireAuth=false RIESGO CRÍTICO
-      CORS allowedOrigins=* RIESGO
-      Sin AT-TLS configurado RIESGO
-    Rendimiento
-      CICS quasi-reentrant CONCURRENCY
-      DB2 Cursor Stability isolation CS
-      Named Counter serialization cuello de botella
-      No hay circuit breaker en WebClient
-    Mantenibilidad
-      1 test unitario TBNKMENU cobertura baja
-      39 COBOL + 51 copybooks bien nombrados
-      CI/CD GitLab zAppBuild pipeline existente
-      DBB YAML alternativa documentada
-    Trazabilidad
-      IBMUSER.PROCTRAN como audit log
-      ABNDPROC escribe a ABNDFILE KSDS
-      SLF4J log.info en Spring Boot nivel bajo
-      Sin SMF records configurados
+flowchart TD
+    ROOT(["🏦 CBSA — Atributos de Calidad"])
+
+    ROOT --> DISP["🟢 DISPONIBILIDAD"]
+    ROOT --> SEG["🔴 SEGURIDAD"]
+    ROOT --> REND["🔵 RENDIMIENTO"]
+    ROOT --> MANT["🟡 MANTENIBILIDAD"]
+    ROOT --> TRAZ["🟣 TRAZABILIDAD"]
+
+    DISP --> D1["Target 99.999%"]
+    DISP --> D2["CICS SYNCPOINT / ROLLBACK"]
+    DISP --> D3["DB2 Deadlock Retry\nhasta 6 intentos — XFRFUN"]
+    DISP --> D4["ABNDPROC centralizado\npara abend handling"]
+    DISP --> D5["Named Counter ENQ/DEQ\nserialización correcta"]
+
+    SEG --> S1["✅ RACF DFHDB2.AUTHTYPE.HBANK\ny DBCG"]
+    SEG --> S2["❌ Basic Auth ibmuser/SYS1\n⚠️ RIESGO DEMO"]
+    SEG --> S3["❌ requireAuth=false\n🔴 RIESGO CRÍTICO"]
+    SEG --> S4["❌ CORS allowedOrigins=*\n⚠️ RIESGO"]
+    SEG --> S5["❌ Sin AT-TLS configurado\n⚠️ RIESGO"]
+
+    REND --> R1["✅ CICS quasi-reentrant\nCONCURRENCY"]
+    REND --> R2["✅ DB2 Cursor Stability\naislamiento CS"]
+    REND --> R3["⚠️ Named Counter\ncuello de botella bajo carga"]
+    REND --> R4["❌ Sin Circuit Breaker\nen WebClient"]
+
+    MANT --> M1["❌ 1 test unitario TBNKMENU\ncobertura < 3%"]
+    MANT --> M2["✅ 39 COBOL + 51 copybooks\nbien nombrados"]
+    MANT --> M3["✅ CI/CD GitLab + zAppBuild\npipeline existente"]
+    MANT --> M4["✅ DBB YAML alternativa\ndocumentada"]
+
+    TRAZ --> T1["✅ IBMUSER.PROCTRAN\ncomo audit log"]
+    TRAZ --> T2["✅ ABNDPROC escribe\na ABNDFILE KSDS"]
+    TRAZ --> T3["⚠️ SLF4J log.info\nsin estructura JSON"]
+    TRAZ --> T4["❌ Sin SMF records\nconfigurados"]
+
+    classDef rootStyle fill:#0043CE,stroke:#001141,color:#ffffff,font-weight:bold
+    classDef dispStyle fill:#defbe6,stroke:#198038,color:#0e3818,font-weight:600
+    classDef segStyle  fill:#fff1f1,stroke:#da1e28,color:#a2191f,font-weight:600
+    classDef rendStyle fill:#d0e2ff,stroke:#0043ce,color:#001d6c,font-weight:600
+    classDef mantStyle fill:#fdf6dd,stroke:#c98000,color:#3c2a00,font-weight:600
+    classDef trazStyle fill:#f6f2ff,stroke:#6929c4,color:#3a1e6e,font-weight:600
+    classDef okStyle   fill:#defbe6,stroke:#198038,color:#0e3818
+    classDef warnStyle fill:#fdf6dd,stroke:#c98000,color:#3c2a00
+    classDef critStyle fill:#fff1f1,stroke:#da1e28,color:#a2191f
+
+    class ROOT rootStyle
+    class DISP dispStyle
+    class SEG segStyle
+    class REND rendStyle
+    class MANT mantStyle
+    class TRAZ trazStyle
+    class D1,D2,D3,D4,D5,R1,R2,M2,M3,M4,T1,T2 okStyle
+    class D3,R3,M1,T3 warnStyle
+    class S2,S3,S4,S5,R4,M1,T4 critStyle
 ```
 
 ---
@@ -193,15 +219,28 @@ mindmap
 
 ### 4.1 Decisiones Arquitectónicas Identificadas
 
-| ID | Decisión | Justificación | Alternativa | Impacto |
-|---|---|---|---|---|
-| AD-01 | Datos de cliente en VSAM KSDS (no DB2) | Rendimiento CICS FILE, modelo histórico | Migrar a DB2 para SQL join capabilities | Rendimiento vs. consultabilidad |
-| AD-02 | Named Counter Server para IDs secuenciales | Garantía de unicidad bajo carga concurrente | UUID / Sequence DB2 | Serialización vs. simplicidad |
-| AD-03 | z/OS Connect EE como gateway REST | Exposición de COBOL sin cambios de código | API Management externo | Latencia interna vs. integración |
-| AD-04 | Spring Boot dentro de CICS Liberty JVM | Todo en z/OS, sin salida de datos | Contenedor externo en OCP | Seguridad vs. flexibilidad de escala |
-| AD-05 | DB2 Isolation Level CS (Cursor Stability) | Balance entre concurrencia y consistencia | RR (Repeatable Read) o UR | Rendimiento vs. consistencia |
-| AD-06 | 5 agencias de crédito simuladas (CRDTAGY1-5) | Prueba de concepto, no producción | Integración real con bureau de crédito | Demo vs. producción |
-| AD-07 | OAS2 Swagger 2.0 (10 specs separadas) | Generado automáticamente por z/OS Connect EE 2.0 | OAS3 unificado (`cbsa-banking-api.yaml`) | Mantenibilidad vs. esfuerzo de migración |
+<div style="overflow-x:auto;">
+<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+  <thead>
+    <tr style="background:#e0e0e0;">
+      <th style="padding:0.6rem 0.75rem;white-space:nowrap;border-bottom:2px solid #c6c6c6;min-width:60px;">ID</th>
+      <th style="padding:0.6rem 0.75rem;border-bottom:2px solid #c6c6c6;">Decisión</th>
+      <th style="padding:0.6rem 0.75rem;border-bottom:2px solid #c6c6c6;">Justificación</th>
+      <th style="padding:0.6rem 0.75rem;border-bottom:2px solid #c6c6c6;">Alternativa</th>
+      <th style="padding:0.6rem 0.75rem;border-bottom:2px solid #c6c6c6;">Impacto</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td style="padding:0.6rem 0.75rem;white-space:nowrap;font-weight:700;color:#0043ce;border-bottom:1px solid #e0e0e0;">AD-01</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Datos de cliente en VSAM KSDS (no DB2)</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Rendimiento CICS FILE, modelo histórico</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Migrar a DB2 para SQL join capabilities</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Rendimiento vs. consultabilidad</td></tr>
+    <tr style="background:#f7f8fa;"><td style="padding:0.6rem 0.75rem;white-space:nowrap;font-weight:700;color:#0043ce;border-bottom:1px solid #e0e0e0;">AD-02</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Named Counter Server para IDs secuenciales</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Garantía de unicidad bajo carga concurrente</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">UUID / Sequence DB2</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Serialización vs. simplicidad</td></tr>
+    <tr><td style="padding:0.6rem 0.75rem;white-space:nowrap;font-weight:700;color:#0043ce;border-bottom:1px solid #e0e0e0;">AD-03</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">z/OS Connect EE como gateway REST</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Exposición de COBOL sin cambios de código</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">API Management externo</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Latencia interna vs. integración</td></tr>
+    <tr style="background:#f7f8fa;"><td style="padding:0.6rem 0.75rem;white-space:nowrap;font-weight:700;color:#0043ce;border-bottom:1px solid #e0e0e0;">AD-04</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Spring Boot dentro de CICS Liberty JVM</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Todo en z/OS, sin salida de datos</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Contenedor externo en OCP</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Seguridad vs. flexibilidad de escala</td></tr>
+    <tr><td style="padding:0.6rem 0.75rem;white-space:nowrap;font-weight:700;color:#0043ce;border-bottom:1px solid #e0e0e0;">AD-05</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">DB2 Isolation Level CS (Cursor Stability)</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Balance entre concurrencia y consistencia</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">RR (Repeatable Read) o UR</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Rendimiento vs. consistencia</td></tr>
+    <tr style="background:#f7f8fa;"><td style="padding:0.6rem 0.75rem;white-space:nowrap;font-weight:700;color:#0043ce;border-bottom:1px solid #e0e0e0;">AD-06</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">5 agencias de crédito simuladas (CRDTAGY1-5)</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Prueba de concepto, no producción</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Integración real con bureau de crédito</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Demo vs. producción</td></tr>
+    <tr><td style="padding:0.6rem 0.75rem;white-space:nowrap;font-weight:700;color:#0043ce;border-bottom:1px solid #e0e0e0;">AD-07</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">OAS2 Swagger 2.0 (10 specs separadas)</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Generado automáticamente por z/OS Connect EE 2.0</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">OAS3 unificado (<code>cbsa-banking-api.yaml</code>)</td><td style="padding:0.6rem 0.75rem;border-bottom:1px solid #e0e0e0;">Mantenibilidad vs. esfuerzo de migración</td></tr>
+  </tbody>
+</table>
+</div>
 
 ### 4.2 Puntos de Sensibilidad Identificados
 
@@ -289,24 +328,73 @@ flowchart LR
 
 ### 6.1 Matriz de Riesgos de Seguridad
 
-```mermaid
-%%{init: {'quadrantChart': {'chartWidth': 400, 'chartHeight': 400}}}%%
-quadrantChart
-    title Riesgos de Seguridad — Probabilidad vs. Impacto
-    x-axis Baja Probabilidad --> Alta Probabilidad
-    y-axis Bajo Impacto --> Alto Impacto
-    quadrant-1 CRÍTICO
-    quadrant-2 ALTO
-    quadrant-3 BAJO
-    quadrant-4 MEDIO
-    requireAuth=false: [0.9, 0.95]
-    Credenciales demo en server.xml: [0.85, 0.9]
-    CORS allowedOrigins=*: [0.7, 0.6]
-    Sin AT-TLS en tránsito: [0.6, 0.8]
-    Keystore password=Liberty: [0.5, 0.7]
-    Un solo usuario RACF: [0.4, 0.75]
-    Sin escaneo SAST: [0.5, 0.5]
-```
+<div style="overflow-x:auto;margin:1.5rem 0;">
+<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+  <thead>
+    <tr>
+      <th style="background:#161616;color:#fff;padding:0.75rem 1rem;text-align:left;border:none;" colspan="5">🔒 Matriz de Riesgos de Seguridad — Probabilidad vs. Impacto</th>
+    </tr>
+    <tr style="background:#e0e0e0;">
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;white-space:nowrap;">Riesgo</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;text-align:center;white-space:nowrap;">Probabilidad</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;text-align:center;white-space:nowrap;">Impacto</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;text-align:center;white-space:nowrap;">Severidad</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;">Evidencia en repositorio</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background:#fff1f1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;font-weight:700;color:#a2191f;"><code>requireAuth=false</code> en z/OS Connect EE</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Alta — 0.90</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Crítico — 0.95</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.25rem 0.75rem;border-radius:3px;font-weight:700;font-size:0.8rem;">🔴 CRÍTICO</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;color:#525252;"><code>server.xml:70</code> — todos los 10 APIs sin autenticación</td>
+    </tr>
+    <tr style="background:#fff1f1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;font-weight:700;color:#a2191f;">Credenciales demo <code>ibmuser/SYS1</code> hardcoded</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Alta — 0.85</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Crítico — 0.90</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.25rem 0.75rem;border-radius:3px;font-weight:700;font-size:0.8rem;">🔴 CRÍTICO</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;color:#525252;"><code>server.xml:12-19</code> — <code>basicRegistry</code> con password en texto claro</td>
+    </tr>
+    <tr style="background:#fff8e1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;font-weight:700;color:#3c2a00;">Sin AT-TLS en tránsito interno</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Media — 0.60</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Alto — 0.80</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.25rem 0.75rem;border-radius:3px;font-weight:700;font-size:0.8rem;">🟠 ALTO</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;color:#525252;">No hay PAGENT / AT-TLS policy en el repositorio</td>
+    </tr>
+    <tr style="background:#fff8e1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;font-weight:700;color:#3c2a00;"><code>Keystore password="Liberty"</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Media — 0.50</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Alto — 0.70</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.25rem 0.75rem;border-radius:3px;font-weight:700;font-size:0.8rem;">🟠 ALTO</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;color:#525252;"><code>server.xml:10</code> — password por defecto, públicamente conocido</td>
+    </tr>
+    <tr style="background:#fff8e1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;font-weight:700;color:#3c2a00;"><code>CORS allowedOrigins="*"</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Alta — 0.70</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Medio — 0.60</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.25rem 0.75rem;border-radius:3px;font-weight:700;font-size:0.8rem;">🟠 ALTO</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;color:#525252;"><code>server.xml:32-39</code> — permite requests desde cualquier origen</td>
+    </tr>
+    <tr style="background:#d0e2ff;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;font-weight:700;color:#001d6c;">Un solo usuario RACF (IBMUSER)</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Baja — 0.40</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Alto — 0.75</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.25rem 0.75rem;border-radius:3px;font-weight:700;font-size:0.8rem;">🟡 MEDIO</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;color:#525252;"><code>RACF001.jcl</code> — IDs personales hardcoded en JCL de permisos</td>
+    </tr>
+    <tr style="background:#d0e2ff;">
+      <td style="padding:0.75rem 1rem;font-weight:700;color:#001d6c;">Sin escaneo SAST automatizado</td>
+      <td style="padding:0.75rem 1rem;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Media — 0.50</span></td>
+      <td style="padding:0.75rem 1rem;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-weight:700;">Medio — 0.50</span></td>
+      <td style="padding:0.75rem 1rem;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.25rem 0.75rem;border-radius:3px;font-weight:700;font-size:0.8rem;">🟡 MEDIO</span></td>
+      <td style="padding:0.75rem 1rem;color:#525252;">Code Review en zAppBuild activo pero sin DAST para APIs REST</td>
+    </tr>
+  </tbody>
+</table>
+</div>
 
 ### 6.2 Análisis Detallado por Control
 
@@ -379,25 +467,45 @@ flowchart TD
 #### XFRFUN — Transferencia de Fondos (Componente Crítico)
 
 ```mermaid
-stateDiagram-v2
-    [*] --> StartTransfer: EXEC CICS LINK XFRFUN
-    StartTransfer --> DebitCheck: Verificar saldo fuente
-    DebitCheck --> DebitOK: Saldo suficiente
-    DebitCheck --> Rollback: Saldo insuficiente
-    DebitOK --> CreditAccount: DBCRFUN débito
-    CreditAccount --> DeadlockRetry: DB2 Deadlock (SQLCODE -911)
-    DeadlockRetry --> CreditAccount: Retry < 6
-    DeadlockRetry --> Rollback: Retry >= 6
-    CreditAccount --> WritePROCTRAN: INSERT IBMUSER.PROCTRAN
-    WritePROCTRAN --> Syncpoint: EXEC CICS SYNCPOINT
-    Syncpoint --> [*]: Commit OK
-    Rollback --> [*]: SYNCPOINT ROLLBACK
+flowchart TD
+    START(["▶ EXEC CICS LINK XFRFUN"])
+    ST["StartTransfer\nVerificar parámetros de entrada"]
+    DC{"DebitCheck\n¿Saldo suficiente?"}
+    DO["DebitOK\nRegistrar débito"]
+    CA["CreditAccount\nDBCRFUN — débito en DB2"]
+    DR{"DeadlockRetry\nDB2 SQLCODE -911\n¿Retry < 6?"}
+    WP["WritePROCTRAN\nINSERT IBMUSER.PROCTRAN"]
+    SY["Syncpoint\nEXEC CICS SYNCPOINT"]
+    RB["Rollback\nEXEC CICS SYNCPOINT ROLLBACK"]
+    OK(["✅ Commit OK"])
+    FAIL(["❌ SYNCPOINT ROLLBACK"])
 
-    note right of DeadlockRetry
-        DB2-DEADLOCK-RETRY counter
-        hasta 6 intentos automáticos
-        Código XFRFUN.cbl línea 1292-1295
-    end note
+    START --> ST
+    ST --> DC
+    DC -- "✅ Saldo suficiente" --> DO
+    DC -- "❌ Saldo insuficiente" --> RB
+    DO --> CA
+    CA --> DR
+    DR -- "🔄 Retry automático" --> CA
+    DR -- "❌ Retry >= 6\nagotado" --> RB
+    CA -- "✅ Sin deadlock" --> WP
+    WP --> SY
+    SY --> OK
+    RB --> FAIL
+
+    classDef startEnd fill:#0043CE,stroke:#001141,color:#ffffff,font-weight:bold
+    classDef process  fill:#d0e2ff,stroke:#0043ce,color:#001d6c
+    classDef decision fill:#fff8e1,stroke:#c98000,color:#3c2a00,font-weight:600
+    classDef success  fill:#defbe6,stroke:#198038,color:#0e3818,font-weight:bold
+    classDef failure  fill:#fff1f1,stroke:#da1e28,color:#a2191f,font-weight:bold
+    classDef retry    fill:#f6f2ff,stroke:#6929c4,color:#3a1e6e
+
+    class START,OK,FAIL startEnd
+    class ST,DO,CA,WP,SY process
+    class DC,DR decision
+    class OK success
+    class FAIL,RB failure
+    class DR retry
 ```
 
 | Aspecto | Estado | Detalle | Recomendación |
@@ -571,30 +679,122 @@ flowchart LR
 
 ## 11. Hoja de Ruta de Modernización
 
-```mermaid
-gantt
-    title Hoja de Ruta de Modernización CBSA
-    dateFormat  YYYY-MM-DD
-    section 🔴 Seguridad Crítica
-    SEC-01 requireAuth=true           :crit, s1, 2025-07-28, 1d
-    SEC-02 RACF SAF domain            :crit, s2, 2025-07-29, 3d
-    SEC-03 Keystore encode            :crit, s3, 2025-07-28, 1d
-    section 🟠 Resiliencia y Cobertura
-    SEC-04 CORS restrict              :s4, 2025-08-04, 1d
-    SEC-05 AT-TLS config              :s5, 2025-08-04, 5d
-    RES-01 Circuit Breaker WebClient  :r1, 2025-08-04, 5d
-    OPS-01 zUnit test coverage        :o1, 2025-08-04, 7d
-    section 🟡 Observabilidad
-    OBS-01 Structured logging         :ob1, 2025-08-18, 3d
-    RES-02 WebClient timeout          :r2, 2025-08-18, 1d
-    PERF-01 INQACCCU pagination       :p1, 2025-08-18, 1d
-    section 🔵 Modernización API
-    MOD-01 OAS3 migration Bob-assisted :m1, 2025-08-25, 7d
-    MOD-02 DBB YAML pipeline active    :m2, 2025-09-01, 5d
-    section 🟢 FinOps y Observabilidad Avanzada
-    FIN-01 WLM MIPS per transaction    :f1, 2025-09-08, 5d
-    OBS-02 SMF structured records      :ob2, 2025-09-08, 5d
-```
+<div style="overflow-x:auto;margin:1.5rem 0;">
+<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+  <thead>
+    <tr>
+      <th style="background:#161616;color:#fff;padding:0.75rem 1rem;text-align:left;border:none;" colspan="5">📅 Hoja de Ruta de Modernización CBSA</th>
+    </tr>
+    <tr style="background:#e0e0e0;">
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;white-space:nowrap;">ID</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;">Acción</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;white-space:nowrap;">Fase / Sprint</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;white-space:nowrap;">Fecha estimada</th>
+      <th style="padding:0.65rem 1rem;border-bottom:2px solid #c6c6c6;white-space:nowrap;">Esfuerzo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background:#fff1f1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;font-weight:700;color:#a2191f;white-space:nowrap;">SEC-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;color:#1f2328;"><strong>Cambiar <code>requireAuth=false</code> → <code>true</code></strong> en <code>server.xml:70</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🔴 Crítico</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;white-space:nowrap;color:#525252;">2025-07-28</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;white-space:nowrap;color:#525252;">1 hora</td>
+    </tr>
+    <tr style="background:#fff1f1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;font-weight:700;color:#a2191f;white-space:nowrap;">SEC-02</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;color:#1f2328;"><strong>Integrar RACF SAF security domain</strong> — eliminar <code>basicRegistry</code> con ibmuser/SYS1</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🔴 Crítico</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;white-space:nowrap;color:#525252;">2025-07-29</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;white-space:nowrap;color:#525252;">1 día</td>
+    </tr>
+    <tr style="background:#fff1f1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;font-weight:700;color:#a2191f;white-space:nowrap;">SEC-03</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;color:#1f2328;"><strong>Encode keystore password</strong> con <code>securityUtility encode</code> — <code>server.xml:10</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;text-align:center;"><span style="background:#da1e28;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🔴 Crítico</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;white-space:nowrap;color:#525252;">2025-07-28</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #ffd7d9;white-space:nowrap;color:#525252;">30 min</td>
+    </tr>
+    <tr style="background:#fff8e1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;font-weight:700;color:#3c2a00;white-space:nowrap;">SEC-04</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;color:#1f2328;"><strong>Restringir CORS</strong> <code>allowedOrigins</code> al hostname de Spring Boot — <code>server.xml:32-39</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟠 Alto</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">2025-08-04</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">30 min</td>
+    </tr>
+    <tr style="background:#fff8e1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;font-weight:700;color:#3c2a00;white-space:nowrap;">SEC-05</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;color:#1f2328;"><strong>Configurar AT-TLS policy</strong> para puertos 30701 y 19080 (PAGENT config en z/OS)</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟠 Alto</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">2025-08-04</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">2 días</td>
+    </tr>
+    <tr style="background:#fff8e1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;font-weight:700;color:#3c2a00;white-space:nowrap;">RES-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;color:#1f2328;"><strong>Añadir Resilience4j CircuitBreaker + Retry</strong> en <code>WebController.java</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟠 Alto</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">2025-08-04</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">3 días</td>
+    </tr>
+    <tr style="background:#fff8e1;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;font-weight:700;color:#3c2a00;white-space:nowrap;">OPS-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;color:#1f2328;"><strong>Crear tests zUnit</strong> para CREACC, XFRFUN, DBCRFUN en <code>CBSA/testcase/</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;text-align:center;"><span style="background:#f1c21b;color:#1c1c1c;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟠 Alto</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">2025-08-04</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #f6e09e;white-space:nowrap;color:#525252;">1 semana</td>
+    </tr>
+    <tr style="background:#d0e2ff;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;font-weight:700;color:#001d6c;white-space:nowrap;">OBS-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;color:#1f2328;"><strong>JSON structured logging</strong> en Spring Boot + MDC Correlation ID</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟡 Medio</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">2025-08-18</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">2 días</td>
+    </tr>
+    <tr style="background:#d0e2ff;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;font-weight:700;color:#001d6c;white-space:nowrap;">RES-02</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;color:#1f2328;"><strong>Configurar <code>responseTimeout</code></strong> en WebClient — <code>WebController.java</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟡 Medio</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">2025-08-18</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">2 horas</td>
+    </tr>
+    <tr style="background:#d0e2ff;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;font-weight:700;color:#001d6c;white-space:nowrap;">PERF-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;color:#1f2328;"><strong>Añadir <code>FETCH FIRST 100 ROWS ONLY</code></strong> en cursor de <code>CBSA/cobol/INQACCCU.cbl</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟡 Medio</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">2025-08-18</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">4 horas</td>
+    </tr>
+    <tr style="background:#d0e2ff;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;font-weight:700;color:#001d6c;white-space:nowrap;">MOD-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;color:#1f2328;"><strong>Migrar z/OS Connect EE a OAS3</strong> con asistencia de Bob — <code>zosconnect_artefacts/openapi3/</code></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟡 Medio</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">2025-08-25</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">1 semana</td>
+    </tr>
+    <tr style="background:#d0e2ff;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;font-weight:700;color:#001d6c;white-space:nowrap;">MOD-02</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;color:#1f2328;"><strong>Activar pipeline DBB YAML</strong> en producción — reemplaza zAppBuild Groovy</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;text-align:center;"><span style="background:#0043ce;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟡 Medio</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">2025-09-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a6c8ff;white-space:nowrap;color:#525252;">5 días</td>
+    </tr>
+    <tr style="background:#defbe6;">
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a7f0ba;font-weight:700;color:#0e3818;white-space:nowrap;">FIN-01</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a7f0ba;color:#1f2328;"><strong>Activar WLM reporting</strong> — MIPS por transacción y métricas de costo por operación</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a7f0ba;text-align:center;"><span style="background:#198038;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟢 FinOps</span></td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a7f0ba;white-space:nowrap;color:#525252;">2025-09-08</td>
+      <td style="padding:0.75rem 1rem;border-bottom:1px solid #a7f0ba;white-space:nowrap;color:#525252;">5 días</td>
+    </tr>
+    <tr style="background:#defbe6;">
+      <td style="padding:0.75rem 1rem;font-weight:700;color:#0e3818;white-space:nowrap;">OBS-02</td>
+      <td style="padding:0.75rem 1rem;color:#1f2328;"><strong>Configurar SMF structured records</strong> para correlación con ELK/Splunk</td>
+      <td style="padding:0.75rem 1rem;text-align:center;"><span style="background:#198038;color:#fff;padding:0.2rem 0.6rem;border-radius:3px;font-size:0.8rem;font-weight:700;">🟢 FinOps</span></td>
+      <td style="padding:0.75rem 1rem;white-space:nowrap;color:#525252;">2025-09-08</td>
+      <td style="padding:0.75rem 1rem;white-space:nowrap;color:#525252;">5 días</td>
+    </tr>
+  </tbody>
+</table>
+</div>
 
 ### Resumen Ejecutivo
 
