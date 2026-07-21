@@ -42,25 +42,40 @@ CBSA is designed as a **living reference** for IBM Z modernization. It preserves
 ```mermaid
 flowchart LR
     subgraph S1 ["Stage 1 — Traditional z/OS"]
-        A1["COBOL + CICS + DB2"]
+        direction TB
+        A1["COBOL + CICS + DB2\nCore platform"]
         A2["zAppBuild\nGroovy Scripts"]
-        A3["OAS2 Swagger\nper service"]
-        A4["Manual development\nJCL submission"]
+        A3["OAS2 Swagger\n10 per-service files"]
+        A4["Manual COBOL editing\nJCL submission"]
     end
     subgraph S2 ["Stage 2 — Hybrid Modernization"]
-        B1["COBOL unchanged\nCICS + DB2"]
-        B2["DBB YAML\nDeclarative build"]
-        B3["Unified OAS3\nAPI spec"]
-        B4["CI/CD pipeline\nGitLab + DBB"]
+        direction TB
+        B1["COBOL unchanged\nCICS + DB2 preserved"]
+        B2["DBB YAML\ndbb-app.yaml"]
+        B3["Unified OAS3\ncbsa-banking-api.yaml"]
+        B4["CI/CD pipeline\nGitLab + DBB 3.x"]
     end
     subgraph S3 ["Stage 3 — AI-Accelerated Z"]
+        direction TB
         C1["COBOL preserved\nor transformed to Java"]
         C2["DBB YAML +\ncontainerized tooling"]
         C3["OAS3 design-first\nAPI governance"]
-        C4["Bob AI\nexplain/plan/transform"]
+        C4["Bob AI\nexplain / plan / transform"]
     end
-    S1 --> S2 --> S3
+
+    S1 -->|"Add API layer\nNo COBOL changes"| S2
+    S2 -->|"Add AI tooling\nNo pipeline changes"| S3
+
+    classDef stage1 fill:#f4f4f4,stroke:#697077,color:#161616
+    classDef stage2 fill:#d0e2ff,stroke:#0043ce,color:#001d6c
+    classDef stage3 fill:#defbe6,stroke:#198038,color:#0e3818
+
+    class A1,A2,A3,A4 stage1
+    class B1,B2,B3,B4 stage2
+    class C1,C2,C3,C4 stage3
 ```
+
+**Legend:** Gray = existing today · Blue = modernization artefacts in this repo · Green = AI-accelerated future state
 
 ## What Exists in This Repository
 
