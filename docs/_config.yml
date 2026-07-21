@@ -1,0 +1,35 @@
+# Site settings
+title: CICS Bank Sample Application
+description: IBM CICS Bank Sample Application (CBSA) — internal reference documentation
+baseurl: "/CICS-Bank-Sample-Application"
+url: "https://nestorsalcedo01.github.io"
+repository_url: "https://github.com/nestorsalcedo01/CICS-Bank-Sample-Application"
+
+# Build settings
+markdown: kramdown
+theme: jekyll-theme-cayman
+
+plugins:
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: true
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"
+  - scope:
+      path: "docs"
+    values:
+      layout: "default"
+
+# Exclude from processing
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - scripts/

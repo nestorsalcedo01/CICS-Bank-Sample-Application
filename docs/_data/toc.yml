@@ -1,0 +1,49 @@
+# Auto-generated TOC
+# Run: python3 scripts/generate_toc_from_md.py to regenerate
+
+- title: Home
+  url: /
+- title: About CBSA
+  url: /docs/about-cbsa/
+- title: Architecture
+  url: /docs/architecture/
+  children:
+  - title: Component Interactions
+    url: /docs/architecture/component-interactions.html
+  - title: DB2 Schema
+    url: /docs/architecture/db2-schema.html
+  - title: System Overview
+    url: /docs/architecture/system-overview.html
+- title: Installation and Setup
+  url: /docs/installation-and-setup/
+- title: Build and Deploy
+  url: /docs/build-and-deploy/
+  children:
+  - title: zAppBuild Pipeline
+    url: /docs/build-and-deploy/zappbuild.html
+- title: Program Reference
+  url: /docs/programs/
+  children:
+  - title: Batch and Utility Programs
+    url: /docs/programs/batch-programs.html
+  - title: CICS Screen Handler Programs
+    url: /docs/programs/screen-handlers.html
+  - title: Business Service Programs
+    url: /docs/programs/service-programs.html
+- title: Testing
+  url: /docs/testing/
+  children:
+  - title: zUnit Overview
+    url: /docs/testing/zunit-overview.html
+- title: z/OS Connect EE
+  url: /docs/zosconnect/
+  children:
+  - title: Services Reference
+    url: /docs/zosconnect/services.html
+- title: Reference
+  url: /docs/reference/
+  children:
+  - title: Copybook Inventory
+    url: /docs/reference/copybooks.html
+  - title: Glossary
+    url: /docs/reference/glossary.html
