@@ -18,6 +18,7 @@ SECTION_MAPPING = {
     "architecture": "Architecture",
     "installation-and-setup": "Installation and Setup",
     "build-and-deploy": "Build and Deploy",
+    "modernization": "Modernization Journey",
     "programs": "Program Reference",
     "testing": "Testing",
     "zosconnect": "z/OS Connect EE",

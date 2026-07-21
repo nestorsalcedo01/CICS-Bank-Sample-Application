@@ -40,6 +40,15 @@
     url: /docs/build-and-deploy/spring-boot-build.html
   - title: zAppBuild Pipeline
     url: /docs/build-and-deploy/zappbuild.html
+- title: Modernization Journey
+  url: /docs/modernization/
+  children:
+  - title: AI-Assisted Development with IBM Bob
+    url: /docs/modernization/ai-assisted-development.html
+  - title: OAS2 vs OAS3 — API Modernization
+    url: /docs/modernization/oas2-vs-oas3.html
+  - title: zAppBuild vs DBB YAML — Build Modernization
+    url: /docs/modernization/zappbuild-vs-dbb-yaml.html
 - title: Program Reference
   url: /docs/programs/
   children:

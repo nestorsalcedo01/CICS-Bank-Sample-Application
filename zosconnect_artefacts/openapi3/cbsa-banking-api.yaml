@@ -1,0 +1,607 @@
+openapi: 3.0.3
+info:
+  title: CBSA Banking API
+  description: |
+    Unified OpenAPI 3.0 specification for the CICS Bank Sample Application (CBSA).
+
+    This spec consolidates the 10 per-service Swagger 2.0 definitions that exist in
+    `zosconnect_artefacts/apis/*/api-docs/swagger.json` into a single, RESTful API
+    contract compatible with z/OS Connect 3.0.
+
+    ## Migration from OAS2
+    The OAS2 definitions used flat, non-RESTful paths (e.g. `/insert`, `/remove/{accno}`).
+    This OAS3 spec adopts proper REST semantics:
+      - Resources: /accounts, /customers, /payments
+      - HTTP verbs: GET (enquire), POST (create), PUT (update), DELETE (delete)
+      - Shared schemas via components/schemas (replacing per-file definitions)
+
+    ## Backend
+    All operations are backed by CICS COBOL programs via EXEC CICS LINK COMMAREA.
+    The z/OS Connect Designer maps each OAS3 field to the corresponding COMMAREA field
+    defined in CBSA/copylib/*.cpy.
+
+  version: 2.0.0
+  contact:
+    name: CICS TS CiP Team
+  license:
+    name: IBM Internal Use Only
+
+servers:
+  - url: https://{host}:30702
+    description: z/OS Connect 3.0 HTTPS endpoint
+    variables:
+      host:
+        default: localhost
+        description: z/OS Connect server hostname
+  - url: http://{host}:30701
+    description: z/OS Connect 3.0 HTTP endpoint (development only)
+    variables:
+      host:
+        default: localhost
+
+security:
+  - basicAuth: []
+
+tags:
+  - name: Accounts
+    description: Bank account management — backed by CREACC, INQACC, UPDACC, DELACC, INQACCCU
+  - name: Customers
+    description: Customer management — backed by CRECUST, INQCUST, UPDCUST, DELCUS
+  - name: Payments
+    description: Payment processing — backed by DBCRFUN, XFRFUN via DPAYAPI
+
+paths:
+
+  # ── ACCOUNT OPERATIONS ──────────────────────────────────────────────────────
+
+  /accounts:
+    post:
+      tags: [Accounts]
+      operationId: createAccount
+      summary: Create a new bank account
+      description: |
+        Creates a new account for an existing customer.
+        Backed by CICS program CREACC.
+        Uses a Named Counter (ENQ/DEQ) to generate a unique sequential account number.
+        Calls credit agency simulators CRDTAGY1–CRDTAGY5 for credit scoring.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+            example:
+              customerId: "1234567890"
+              sortCode: "987654"
+              accountType: "CURRENT"
+              interestRate: 2.50
+              overdraftLimit: 500
+      responses:
+        '201':
+          description: Account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /accounts/{accountId}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+
+    get:
+      tags: [Accounts]
+      operationId: getAccount
+      summary: Enquire on a bank account
+      description: Retrieves a single account record. Backed by CICS program INQACC.
+      responses:
+        '200':
+          description: Account found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [Accounts]
+      operationId: updateAccount
+      summary: Update a bank account
+      description: |
+        Updates modifiable account fields (interest rate, overdraft limit, account type).
+        Backed by CICS program UPDACC. Writes an audit record to IBMUSER.PROCTRAN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAccountRequest'
+      responses:
+        '200':
+          description: Account updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Accounts]
+      operationId: deleteAccount
+      summary: Delete a bank account
+      description: |
+        Deletes an account. The account balance must be zero.
+        Backed by CICS program DELACC. Writes an audit record to IBMUSER.PROCTRAN.
+      responses:
+        '204':
+          description: Account deleted successfully
+        '400':
+          description: Account balance is not zero
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ── CUSTOMER OPERATIONS ─────────────────────────────────────────────────────
+
+  /customers:
+    post:
+      tags: [Customers]
+      operationId: createCustomer
+      summary: Create a new customer
+      description: |
+        Creates a new customer record.
+        Backed by CICS program CRECUST.
+        Uses a Named Counter to generate a unique sequential customer number.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerRequest'
+            example:
+              name: "John Smith"
+              address: "123 Main Street, Springfield"
+              dateOfBirth: "1980-05-15"
+      responses:
+        '201':
+          description: Customer created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /customers/{customerId}:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+
+    get:
+      tags: [Customers]
+      operationId: getCustomer
+      summary: Enquire on a customer
+      description: Retrieves a single customer record. Backed by CICS program INQCUST.
+      responses:
+        '200':
+          description: Customer found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [Customers]
+      operationId: updateCustomer
+      summary: Update a customer
+      description: |
+        Updates customer name and address.
+        Backed by CICS program UPDCUST.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200':
+          description: Customer updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Customers]
+      operationId: deleteCustomer
+      summary: Delete a customer
+      description: |
+        Deletes a customer record.
+        All accounts for the customer must be deleted first.
+        Backed by CICS program DELCUS.
+      responses:
+        '204':
+          description: Customer deleted successfully
+        '400':
+          description: Customer still has active accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /customers/{customerId}/accounts:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+
+    get:
+      tags: [Customers, Accounts]
+      operationId: listCustomerAccounts
+      summary: List all accounts for a customer
+      description: |
+        Returns all account records for a given customer number.
+        Uses a DB2 cursor to fetch multiple rows.
+        Backed by CICS program INQACCCU.
+      responses:
+        '200':
+          description: List of accounts (may be empty)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customerId:
+                    type: string
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ── PAYMENT OPERATIONS ──────────────────────────────────────────────────────
+
+  /payments:
+    post:
+      tags: [Payments]
+      operationId: makePayment
+      summary: Make a payment (debit/credit or transfer)
+      description: |
+        Processes a debit, credit, or transfer between accounts.
+        Backed by CICS program DPAYAPI, which delegates to DBCRFUN (debit/credit)
+        or XFRFUN (transfer). Both operations write to IBMUSER.PROCTRAN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+            example:
+              paymentType: TRANSFER
+              sourceAccountId: "12345678"
+              targetAccountId: "87654321"
+              sortCode: "987654"
+              amount: 250.00
+              reference: "PAY-20240115-001"
+      responses:
+        '200':
+          description: Payment processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Insufficient funds or business rule violation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+# ── COMPONENTS ───────────────────────────────────────────────────────────────
+
+components:
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Basic authentication against z/OS Connect Liberty basicRegistry
+
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      description: 8-digit account number
+      schema:
+        type: string
+        pattern: '^\d{8}$'
+        example: "12345678"
+
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      description: 10-digit customer number
+      schema:
+        type: string
+        pattern: '^\d{10}$'
+        example: "1234567890"
+
+  responses:
+    BadRequest:
+      description: Invalid request data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+
+    Account:
+      type: object
+      description: Bank account record — maps to IBMUSER.ACCOUNT DB2 table
+      properties:
+        accountId:
+          type: string
+          maxLength: 8
+          description: Unique account number (ACCOUNT_NUMBER)
+        customerId:
+          type: string
+          maxLength: 10
+          description: Owner customer number (ACCOUNT_CUSTOMER_NUMBER)
+        sortCode:
+          type: string
+          maxLength: 6
+          description: Bank sort code (ACCOUNT_SORTCODE)
+        accountType:
+          type: string
+          maxLength: 8
+          description: Account type e.g. CURRENT, SAVING (ACCOUNT_TYPE)
+        interestRate:
+          type: number
+          format: decimal
+          minimum: 0
+          maximum: 9999.99
+          description: Annual interest rate (ACCOUNT_INTEREST_RATE)
+        openedDate:
+          type: string
+          format: date
+          description: Date account was opened (ACCOUNT_OPENED)
+        overdraftLimit:
+          type: integer
+          minimum: 0
+          description: Overdraft limit in pence (ACCOUNT_OVERDRAFT_LIMIT)
+        lastStatementDate:
+          type: string
+          format: date
+          description: Date of last statement (ACCOUNT_LAST_STATEMENT)
+        nextStatementDate:
+          type: string
+          format: date
+          description: Date of next statement (ACCOUNT_NEXT_STATEMENT)
+        availableBalance:
+          type: number
+          format: decimal
+          minimum: -9999999999.99
+          maximum: 9999999999.99
+          description: Available balance (ACCOUNT_AVAILABLE_BALANCE)
+        actualBalance:
+          type: number
+          format: decimal
+          minimum: -9999999999.99
+          maximum: 9999999999.99
+          description: Actual balance (ACCOUNT_ACTUAL_BALANCE)
+
+    CreateAccountRequest:
+      type: object
+      required: [customerId, sortCode, accountType]
+      properties:
+        customerId:
+          type: string
+          maxLength: 10
+        sortCode:
+          type: string
+          maxLength: 6
+        accountType:
+          type: string
+          maxLength: 8
+        interestRate:
+          type: number
+          format: decimal
+          default: 0.00
+        overdraftLimit:
+          type: integer
+          default: 0
+
+    UpdateAccountRequest:
+      type: object
+      properties:
+        accountType:
+          type: string
+          maxLength: 8
+        interestRate:
+          type: number
+          format: decimal
+        overdraftLimit:
+          type: integer
+
+    Customer:
+      type: object
+      description: Customer record — maps to IBMUSER.CUSTOMER DB2 table
+      properties:
+        customerId:
+          type: string
+          maxLength: 10
+          description: Unique customer number (CUSTOMER_NUMBER)
+        sortCode:
+          type: string
+          maxLength: 6
+          description: Bank sort code (CUSTOMER_SORTCODE)
+        name:
+          type: string
+          maxLength: 60
+          description: Full customer name (CUSTOMER_NAME)
+        address:
+          type: string
+          maxLength: 160
+          description: Customer address (CUSTOMER_ADDRESS)
+        dateOfBirth:
+          type: string
+          format: date
+          description: Date of birth (CUSTOMER_DATE_OF_BIRTH)
+        creditScore:
+          type: integer
+          minimum: 0
+          maximum: 999
+          description: Credit score 0-999 (CUSTOMER_CREDIT_SCORE)
+        creditScoreReviewDate:
+          type: string
+          format: date
+          description: Next credit score review date (CUSTOMER_CS_REVIEW_DATE)
+
+    CreateCustomerRequest:
+      type: object
+      required: [name, address, dateOfBirth]
+      properties:
+        name:
+          type: string
+          maxLength: 60
+        address:
+          type: string
+          maxLength: 160
+        dateOfBirth:
+          type: string
+          format: date
+
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 60
+        address:
+          type: string
+          maxLength: 160
+
+    PaymentRequest:
+      type: object
+      required: [paymentType, sourceAccountId, sortCode, amount]
+      properties:
+        paymentType:
+          type: string
+          enum: [DEBIT, CREDIT, TRANSFER]
+          description: Type of payment operation
+        sourceAccountId:
+          type: string
+          maxLength: 8
+          description: Source account number
+        targetAccountId:
+          type: string
+          maxLength: 8
+          description: Target account number (required for TRANSFER)
+        sortCode:
+          type: string
+          maxLength: 6
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Payment amount
+        reference:
+          type: string
+          maxLength: 12
+          description: Payment reference (stored in PROCTRAN_REF)
+
+    PaymentResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          maxLength: 12
+          description: Generated transaction reference
+        paymentType:
+          type: string
+        sourceAccountId:
+          type: string
+        targetAccountId:
+          type: string
+        amount:
+          type: number
+          format: decimal
+        newBalance:
+          type: number
+          format: decimal
+          description: New available balance of the source account
+        success:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Application error code
+        message:
+          type: string
+          description: Human-readable error description
+        details:
+          type: string
+          description: Additional context (not exposed to end users in production)
