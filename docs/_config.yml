@@ -7,7 +7,6 @@ repository_url: "https://github.com/nestorsalcedo01/CICS-Bank-Sample-Application
 
 # Build settings
 markdown: kramdown
-theme: jekyll-theme-cayman
 
 plugins:
   - jekyll-relative-links
