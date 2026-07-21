@@ -10,15 +10,34 @@
   children:
   - title: Component Interactions
     url: /docs/architecture/component-interactions.html
+  - title: Data Flow
+    url: /docs/architecture/data-flow.html
   - title: DB2 Schema
     url: /docs/architecture/db2-schema.html
   - title: System Overview
     url: /docs/architecture/system-overview.html
 - title: Installation and Setup
   url: /docs/installation-and-setup/
+  children:
+  - title: CICS Region Configuration
+    url: /docs/installation-and-setup/cics-setup.html
+  - title: DB2 Schema Setup
+    url: /docs/installation-and-setup/db2-setup.html
+  - title: Prerequisites
+    url: /docs/installation-and-setup/prerequisites.html
+  - title: Spring Boot UI Setup
+    url: /docs/installation-and-setup/spring-boot-setup.html
+  - title: z/OS Connect EE Deployment
+    url: /docs/installation-and-setup/zosconnect-setup.html
 - title: Build and Deploy
   url: /docs/build-and-deploy/
   children:
+  - title: Build Properties Reference
+    url: /docs/build-and-deploy/build-properties.html
+  - title: GitLab CI Pipeline
+    url: /docs/build-and-deploy/gitlab-ci.html
+  - title: Spring Boot WAR Build
+    url: /docs/build-and-deploy/spring-boot-build.html
   - title: zAppBuild Pipeline
     url: /docs/build-and-deploy/zappbuild.html
 - title: Program Reference
@@ -26,6 +45,8 @@
   children:
   - title: Batch and Utility Programs
     url: /docs/programs/batch-programs.html
+  - title: BMS Maps
+    url: /docs/programs/bms-maps.html
   - title: CICS Screen Handler Programs
     url: /docs/programs/screen-handlers.html
   - title: Business Service Programs
@@ -33,17 +54,27 @@
 - title: Testing
   url: /docs/testing/
   children:
+  - title: Running Tests
+    url: /docs/testing/running-tests.html
+  - title: Writing a New Test
+    url: /docs/testing/writing-a-test.html
   - title: zUnit Overview
     url: /docs/testing/zunit-overview.html
 - title: z/OS Connect EE
   url: /docs/zosconnect/
   children:
+  - title: Liberty Server Configuration
+    url: /docs/zosconnect/server-config.html
   - title: Services Reference
     url: /docs/zosconnect/services.html
 - title: Reference
   url: /docs/reference/
   children:
+  - title: BMS Maps Reference
+    url: /docs/reference/bms-maps.html
   - title: Copybook Inventory
     url: /docs/reference/copybooks.html
   - title: Glossary
     url: /docs/reference/glossary.html
+  - title: Naming Conventions
+    url: /docs/reference/naming-conventions.html
