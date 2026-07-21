@@ -90,6 +90,11 @@
     url: /docs/zosconnect/server-config.html
   - title: Services Reference
     url: /docs/zosconnect/services.html
+- title: Architecture Review
+  url: /architecture-review/
+  children:
+  - title: CBSA Architecture Review (ATAM/DORA)
+    url: /architecture-review/cbsa-architecture-review.html
 - title: Reference
   url: /docs/reference/
   children:

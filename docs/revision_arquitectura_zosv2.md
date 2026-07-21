@@ -1,3 +1,8 @@
+---
+layout: default
+title: "Guía de Revisión de Arquitectura z/OS v2"
+---
+
 # Guía de Revisión de Arquitectura para Aplicaciones z/OS
 
 Esta guía técnica proporciona un marco estructurado para evaluar arquitecturas de aplicaciones en entornos z/OS, integrando metodologías probadas (ATAM, DORA, Well-Architected) para garantizar resiliencia, seguridad y eficiencia operativa.

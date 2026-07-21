@@ -135,6 +135,12 @@ title: Home
 <p>Copybook inventory, BMS maps, naming conventions, and glossary.</p>
 </a>
 
+<a class="doc-card" href="architecture-review/">
+<div class="doc-card-tag">Architecture Review</div>
+<h3>Architecture Review</h3>
+<p>ATAM · DORA · Well-Architected analysis — hallazgos, riesgos y hoja de ruta de modernización.</p>
+</a>
+
 </div>
 
 ---

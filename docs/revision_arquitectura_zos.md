@@ -1,3 +1,8 @@
+---
+layout: default
+title: "Guía de Revisión de Arquitectura z/OS"
+---
+
 # Guía de Revisión de Arquitectura para Aplicaciones z/OS
 
 Esta guía aplica los principios de *Architectural Thinking* para evaluar la arquitectura de sistemas z/OS, enfocándose en la gestión de riesgos, el análisis de *trade-offs* y la alineación con los objetivos de negocio.

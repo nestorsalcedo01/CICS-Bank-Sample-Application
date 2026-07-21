@@ -1,3 +1,8 @@
+---
+layout: default
+title: "Architecture Review — CBSA z/OS"
+---
+
 # CBSA — Revisión de Arquitectura z/OS
 ## Aplicando la Guía `revision_arquitectura_zosv2.md`
 
